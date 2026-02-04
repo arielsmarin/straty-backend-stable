@@ -3,8 +3,8 @@
  * Gerenciamento do Marzipano viewer
  */
 
-import { CreateCameraController, CAMERA_POIS } from './CameraController.js';
-import { TILE_PATTERN } from '../utils/TilePattern.js';
+import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
+import { TILE_PATTERN } from "../utils/TilePattern.js";
 
 export class ViewerManager {
   constructor(containerId, viewerConfig = {}) {
@@ -17,6 +17,7 @@ export class ViewerManager {
     this._currentBuild = null;
     this._currentClientId = null;
     this._currentSceneId = null;
+    this._savedViewParams = null;
   }
 
   get viewer() {
@@ -36,12 +37,18 @@ export class ViewerManager {
       throw new Error(`Container não encontrado: ${this._containerId}`);
     }
 
-    if (typeof Marzipano === 'undefined') {
-      throw new Error('Marzipano não está carregado. Verifique o script no HTML.');
+    if (typeof Marzipano === "undefined") {
+      throw new Error(
+        "Marzipano não está carregado. Verifique o script no HTML.",
+      );
     }
 
+    // Habilita zoom com scroll
     this._viewer = new Marzipano.Viewer(container, {
-      controls: { mouseViewMode: "drag" },
+      controls: {
+        mouseViewMode: "drag",
+        scrollZoom: true,
+      },
     });
 
     console.log("[ViewerManager] Viewer inicializado");
@@ -49,40 +56,79 @@ export class ViewerManager {
   }
 
   /**
+   * Salva os parâmetros da view atual
+   */
+  saveViewParams() {
+    if (this._view) {
+      this._savedViewParams = {
+        yaw: this._view.yaw(),
+        pitch: this._view.pitch(),
+        fov: this._view.fov(),
+      };
+    }
+  }
+
+  /**
+   * Restaura os parâmetros da view salvos
+   */
+  restoreViewParams() {
+    if (this._savedViewParams && this._view) {
+      this._view.setYaw(this._savedViewParams.yaw);
+      this._view.setPitch(this._savedViewParams.pitch);
+      this._view.setFov(this._savedViewParams.fov);
+    }
+  }
+
+  /**
    * Carrega uma cena com os tiles
    */
-  async loadScene(clientId, sceneId, buildString) {
+  async loadScene(clientId, sceneId, buildString, preserveView = false) {
     if (!this._viewer) {
       throw new Error("Viewer não inicializado");
     }
 
+    // Salva view atual se necessário
+    if (preserveView && this._view) {
+      this.saveViewParams();
+    }
+
     const { tileSize = 512, cubeSize = 1024 } = this._viewerConfig;
-    
-    // Usa o padrão correto alinhado com o backend
-    const tileUrl = TILE_PATTERN.getMarzipanoPattern(clientId, sceneId, buildString);
+
+    // URL pattern para os tiles
+    const tileUrl = TILE_PATTERN.getMarzipanoPattern(
+      clientId,
+      sceneId,
+      buildString,
+    );
 
     console.log(`[ViewerManager] Carregando tiles: ${tileUrl}`);
 
     // Fonte de tiles
     const source = Marzipano.ImageUrlSource.fromString(tileUrl);
 
-    // Geometria - apenas um nível
+    // Geometria - IMPORTANTE: precisa ter pelo menos um nível não-fallback
     const geometry = new Marzipano.CubeGeometry([
-      { tileSize: tileSize, size: cubeSize }
+      { tileSize: tileSize, size: cubeSize },
     ]);
 
-    // Limiter
+    // Limiter com zoom habilitado
     const limiter = Marzipano.RectilinearView.limit.traditional(
       cubeSize,
-      (100 * Math.PI) / 180
+      (120 * Math.PI) / 180, // maxFov - mais zoom out
+      (30 * Math.PI) / 45, // minFov - mais zoom in (adicionado)
     );
 
-    // View
-    const initialViewParams = { 
-      yaw: 0, 
-      pitch: 0, 
-      fov: this._viewerConfig.defaultFov || Math.PI / 2 
-    };
+    // View - usa parâmetros salvos ou padrão
+    let initialViewParams;
+    if (preserveView && this._savedViewParams) {
+      initialViewParams = this._savedViewParams;
+    } else {
+      initialViewParams = {
+        yaw: 0,
+        pitch: 0,
+        fov: this._viewerConfig.defaultFov || Math.PI / 2,
+      };
+    }
 
     this._view = new Marzipano.RectilinearView(initialViewParams, limiter);
 
@@ -108,35 +154,25 @@ export class ViewerManager {
   }
 
   /**
-   * Atualiza a cena com novos tiles
+   * Atualiza a cena com novos tiles (mantém câmera)
    */
   async updateScene(clientId, sceneId, buildString) {
     // Se é a mesma build e mesma cena, ignora
     if (
-      this._currentBuild === buildString && 
-      this._currentClientId === clientId && 
+      this._currentBuild === buildString &&
+      this._currentClientId === clientId &&
       this._currentSceneId === sceneId
     ) {
       console.log("[ViewerManager] Build já carregada, ignorando");
       return;
     }
 
-    // Salva parâmetros da view atual
-    const currentParams = this._view ? {
-      yaw: this._view.yaw(),
-      pitch: this._view.pitch(),
-      fov: this._view.fov()
-    } : null;
+    // Determina se deve preservar a view (mesma cena, apenas material diferente)
+    const sameScene =
+      this._currentClientId === clientId && this._currentSceneId === sceneId;
 
-    // Carrega nova cena
-    await this.loadScene(clientId, sceneId, buildString);
-
-    // Restaura view se havia uma anterior (e é a mesma cena)
-    if (currentParams && this._view && this._currentSceneId === sceneId) {
-      this._view.setYaw(currentParams.yaw);
-      this._view.setPitch(currentParams.pitch);
-      this._view.setFov(currentParams.fov);
-    }
+    // Carrega nova cena preservando view se for mesma cena
+    await this.loadScene(clientId, sceneId, buildString, sameScene);
 
     console.log(`[ViewerManager] Cena atualizada: ${buildString}`);
   }

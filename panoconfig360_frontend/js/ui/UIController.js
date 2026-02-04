@@ -9,6 +9,7 @@ export class UIController {
     this._onSelectionChange = callbacks.onSelectionChange;
     this._onFocusRequest = callbacks.onFocusRequest;
     this._onSave2Render = callbacks.onSave2Render;
+    this._onToggleSceneSelector = callbacks.onToggleSceneSelector;
 
     this._activeLayerId = null;
 
@@ -21,6 +22,31 @@ export class UIController {
     this._submenuTileList = null;
 
     this._bindSave2RenderButton();
+    this._createSceneSelectorButton();
+  }
+
+  /**
+   * Cria botão para abrir seletor de cenas
+   */
+  _createSceneSelectorButton() {
+    const uiContainer = document.querySelector('.ui-container');
+    if (!uiContainer) return;
+
+    // Verifica se já existe
+    if (document.getElementById('scene-toggle-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'scene-toggle-btn';
+    btn.className = 'scene-toggle-btn';
+    btn.textContent = 'Trocar Cena';
+    btn.onclick = () => {
+      if (this._onToggleSceneSelector) {
+        this._onToggleSceneSelector();
+      }
+    };
+
+    // Insere no início do container
+    uiContainer.insertBefore(btn, uiContainer.firstChild);
   }
 
   /**
@@ -61,6 +87,7 @@ export class UIController {
       thumb.className = "menu-item-thumbnail";
       thumb.src = selectedItem?.thumbnail || "";
       thumb.alt = selectedItem?.label || "";
+      thumb.onerror = () => { thumb.style.display = 'none'; };
 
       const text = document.createElement("div");
       text.className = "menu-item-text";
@@ -156,6 +183,7 @@ export class UIController {
       const img = document.createElement("img");
       img.src = selectedItem.thumbnail || "";
       img.alt = selectedItem.label;
+      img.onerror = () => { img.style.display = 'none'; };
 
       const label = document.createElement("div");
       label.className = "submenu-main-label";
@@ -191,6 +219,7 @@ export class UIController {
       const img = document.createElement("img");
       img.src = item.thumbnail || "";
       img.alt = item.label;
+      img.onerror = () => { img.style.display = 'none'; };
 
       const label = document.createElement("div");
       label.className = "tile-label";

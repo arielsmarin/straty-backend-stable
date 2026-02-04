@@ -60,12 +60,13 @@ async function init() {
     uiController = new UIController(configurator, {
       onSelectionChange: handleSelectionChange,
       onFocusRequest: handleFocusRequest,
-      onSave2Render: handleSave2Render
+      onSave2Render: handleSave2Render,
+      onToggleSceneSelector: toggleSceneSelector
     });
     uiController.renderMainMenu();
 
     // 7. Carrega a cena inicial
-    await loadCurrentScene();
+    await loadCurrentScene(false);
 
     console.log('[Main] Aplicação iniciada com sucesso!');
 
@@ -80,12 +81,12 @@ async function init() {
 
 /**
  * Carrega a cena atual no viewer
+ * @param {boolean} preserveView - Se deve manter a posição da câmera
  */
-async function loadCurrentScene() {
+async function loadCurrentScene(preserveView = true) {
   const clientId = configLoader.clientId;
   const sceneId = configurator.sceneId;
   const selection = configurator.currentSelection;
-  const buildString = configurator.getBuildString();
 
   console.log(`[Main] Carregando cena: ${sceneId}`);
 
@@ -95,7 +96,7 @@ async function loadCurrentScene() {
     console.log('[Main] Render result:', result);
 
     // Carrega os tiles no viewer
-    await viewerManager.loadScene(clientId, sceneId, result.build);
+    await viewerManager.loadScene(clientId, sceneId, result.build, preserveView);
 
   } catch (error) {
     console.error('[Main] Erro ao carregar cena:', error);
@@ -103,13 +104,13 @@ async function loadCurrentScene() {
 }
 
 /**
- * Handler para mudança de seleção
+ * Handler para mudança de seleção (material)
  */
 async function handleSelectionChange(selection) {
   console.log('[Main] Seleção alterada:', selection);
   
-  // Atualiza o viewer com a nova seleção
-  await loadCurrentScene();
+  // Atualiza o viewer mantendo a câmera
+  await loadCurrentScene(true);
 }
 
 /**
@@ -132,8 +133,18 @@ async function handleSceneChange(sceneId) {
   // Atualiza UI
   uiController.setConfigurator(configurator);
   
-  // Carrega a nova cena
-  await loadCurrentScene();
+  // Fecha o seletor de cenas
+  sceneSelector.hide();
+  
+  // Carrega a nova cena (não preserva câmera pois é outra cena)
+  await loadCurrentScene(false);
+}
+
+/**
+ * Toggle do seletor de cenas
+ */
+function toggleSceneSelector() {
+  sceneSelector.toggle();
 }
 
 /**
@@ -146,16 +157,87 @@ async function handleSave2Render() {
 
   console.log('[Main] Solicitando render 2D...');
 
+  // Mostra modal de loading
+  showRenderModal('loading');
+
   try {
     const result = await renderService.render2D(clientId, sceneId, selection);
     console.log('[Main] Render 2D result:', result);
 
-    // Abre a imagem em nova aba ou faz download
+    // Mostra a imagem no modal
     if (result.url) {
-      window.open(result.url, '_blank');
+      showRenderModal('success', result.url);
     }
 
   } catch (error) {
     console.error('[Main] Erro no render 2D:', error);
+    showRenderModal('error', null, error.message);
   }
+}
+
+/**
+ * Mostra o modal de renderização
+ */
+function showRenderModal(state, imageUrl = null, errorMessage = null) {
+  // Remove modal existente se houver
+  let modal = document.getElementById('render-modal');
+  if (modal) {
+    modal.remove();
+  }
+
+  // Cria o modal
+  modal = document.createElement('div');
+  modal.id = 'render-modal';
+  modal.className = 'render-modal';
+
+  const content = document.createElement('div');
+  content.className = 'render-modal-content';
+
+  // Header com botão fechar
+  const header = document.createElement('div');
+  header.className = 'render-modal-header';
+  
+  const title = document.createElement('h3');
+  title.textContent = 'Renderização 2D';
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'render-modal-close';
+  closeBtn.textContent = '×';
+  closeBtn.onclick = () => modal.remove();
+  
+  header.append(title, closeBtn);
+  content.appendChild(header);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'render-modal-body';
+
+  if (state === 'loading') {
+    body.innerHTML = '<div class="render-loading">Gerando imagem...</div>';
+  } else if (state === 'success' && imageUrl) {
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.className = 'render-preview-image';
+    img.alt = 'Renderização 2D';
+    
+    const downloadBtn = document.createElement('a');
+    downloadBtn.href = imageUrl;
+    downloadBtn.download = 'render-2d.jpg';
+    downloadBtn.className = 'render-download-btn';
+    downloadBtn.textContent = 'Download';
+    
+    body.append(img, downloadBtn);
+  } else if (state === 'error') {
+    body.innerHTML = `<div class="render-error">Erro: ${errorMessage || 'Falha na renderização'}</div>`;
+  }
+
+  content.appendChild(body);
+  modal.appendChild(content);
+
+  // Fecha ao clicar fora
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
+
+  document.body.appendChild(modal);
 }
