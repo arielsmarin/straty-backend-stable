@@ -21,6 +21,7 @@ def exists(key: str) -> bool:
 def upload_file(file_path: str, key: str, content_type: str = "application/octet-stream"):
     dest = _resolve_path(key)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    _ = content_type  # Ignorado para armazenamento local, mas mantido para compatibilidade com interface
 
     try:
         with open(file_path, "rb") as src, open(dest, "wb") as dst:

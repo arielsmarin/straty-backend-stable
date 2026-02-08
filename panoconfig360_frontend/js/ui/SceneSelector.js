@@ -5,28 +5,53 @@
 
 export class SceneSelector {
   constructor(containerId, onSceneChange) {
-    this._container = document.getElementById(containerId);
     this._onSceneChange = onSceneChange;
     this._scenes = [];
     this._activeSceneId = null;
-    this._isVisible = false;
+    this._container = null;
+    this._buttonsContainer = null;
     
-    this._init();
+    this._createContainer();
   }
 
   /**
-   * Inicializa o container se não existir
+   * Cria o container do seletor
    */
-  _init() {
-    if (!this._container) {
-      // Cria o container
-      this._container = document.createElement('div');
-      this._container.id = 'scene-selector';
-      this._container.className = 'scene-selector';
-      document.body.appendChild(this._container);
+  _createContainer() {
+    // Remove container existente se houver
+    const existing = document.getElementById('scene-selector');
+    if (existing) {
+      existing.remove();
     }
-    
-    this._container.style.display = 'none';
+
+    // Container principal
+    this._container = document.createElement('div');
+    this._container.id = 'scene-selector';
+    this._container.className = 'scene-selector';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'scene-selector-header';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Selecionar Cena';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'scene-selector-close';
+    closeBtn.innerHTML = '×';
+    closeBtn.onclick = () => this.hide();
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Container de botões
+    this._buttonsContainer = document.createElement('div');
+    this._buttonsContainer.id = 'scene-buttons';
+    this._buttonsContainer.className = 'scene-buttons';
+
+    this._container.appendChild(header);
+    this._container.appendChild(this._buttonsContainer);
+    document.body.appendChild(this._container);
   }
 
   /**
@@ -36,26 +61,9 @@ export class SceneSelector {
     this._scenes = scenes;
     this._activeSceneId = activeSceneId || scenes[0]?.id;
 
-    this._container.innerHTML = '';
+    if (!this._buttonsContainer) return;
 
-    // Header com título e botão fechar
-    const header = document.createElement('div');
-    header.className = 'scene-selector-header';
-    
-    const title = document.createElement('h3');
-    title.textContent = 'Selecione a Cena';
-    
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'scene-selector-close';
-    closeBtn.textContent = '×';
-    closeBtn.onclick = () => this.hide();
-    
-    header.append(title, closeBtn);
-    this._container.appendChild(header);
-
-    // Container dos botões
-    const buttonsContainer = document.createElement('div');
-    buttonsContainer.className = 'scene-buttons';
+    this._buttonsContainer.innerHTML = '';
 
     scenes.forEach(scene => {
       const button = document.createElement('button');
@@ -68,10 +76,8 @@ export class SceneSelector {
       }
 
       button.onclick = () => this._handleSceneClick(scene.id);
-      buttonsContainer.appendChild(button);
+      this._buttonsContainer.appendChild(button);
     });
-
-    this._container.appendChild(buttonsContainer);
   }
 
   /**
@@ -84,7 +90,7 @@ export class SceneSelector {
     }
 
     // Atualiza estado visual
-    this._container.querySelectorAll('.scene-button').forEach(btn => {
+    this._buttonsContainer.querySelectorAll('.scene-button').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.sceneId === sceneId);
     });
 
@@ -97,12 +103,22 @@ export class SceneSelector {
   }
 
   /**
+   * Toggle visibilidade
+   */
+  toggle() {
+    if (this._container.style.display === 'flex') {
+      this.hide();
+    } else {
+      this.show();
+    }
+  }
+
+  /**
    * Mostra o seletor
    */
   show() {
     if (this._container) {
       this._container.style.display = 'flex';
-      this._isVisible = true;
     }
   }
 
@@ -112,18 +128,6 @@ export class SceneSelector {
   hide() {
     if (this._container) {
       this._container.style.display = 'none';
-      this._isVisible = false;
-    }
-  }
-
-  /**
-   * Toggle visibilidade
-   */
-  toggle() {
-    if (this._isVisible) {
-      this.hide();
-    } else {
-      this.show();
     }
   }
 
@@ -132,12 +136,5 @@ export class SceneSelector {
    */
   get activeSceneId() {
     return this._activeSceneId;
-  }
-
-  /**
-   * Verifica se está visível
-   */
-  get isVisible() {
-    return this._isVisible;
   }
 }

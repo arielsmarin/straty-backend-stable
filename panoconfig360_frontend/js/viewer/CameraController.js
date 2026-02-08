@@ -32,6 +32,21 @@ export function CreateCameraController(view) {
     originalSetFov(clampFov(fov));
   };
 
+  function getState() {
+    return {
+      yaw: view.yaw(),
+      pitch: view.pitch(),
+      fov: view.fov(),
+    };
+  }
+
+  function restore(state) {
+    if (!state) return;
+    view.setYaw(state.yaw);
+    view.setPitch(state.pitch);
+    view.setFov(state.fov);
+  }
+
   function shortestAngleDifference(a, b) {
     let diff = b - a;
     while (diff > Math.PI) diff -= 2 * Math.PI;
@@ -88,5 +103,5 @@ export function CreateCameraController(view) {
   // Corrige FOV inicial
   view.setFov(clampFov(view.fov()));
 
-  return { focusOn };
+  return { focusOn, getState, restore };
 }

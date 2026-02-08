@@ -1,4 +1,4 @@
-panoconfig360_cache/*
+panoconfig360_cache\clients\monte-negro\cubemap\*
 __pycache__/
 *.py[cod]
 *$py.class

@@ -12,7 +12,6 @@ from panoconfig360_backend.render.dynamic_stack import (
     load_config,
     build_string_from_selection,
     encode_index,
-    stack_layers_image_only,
 )
 from panoconfig360_backend.render.split_faces_cubemap import process_cubemap
 from panoconfig360_backend.render.stack_2d import render_stack_2d
@@ -22,13 +21,24 @@ from panoconfig360_backend.render.scene_context import resolve_scene_context
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
+from panoconfig360_backend.utils.build_validation import validate_build_string
+import re
+
 
 # CONFIGURAÇÕES GLOBAIS
 ROOT_DIR = Path(__file__).resolve().parents[1].parent
-CLIENTS_ROOT = Path("panoconfig360_backend/assets/clients")
+CLIENTS_ROOT = Path("panoconfig360_cache/clients")
 LOCAL_CACHE_DIR = ROOT_DIR / "panoconfig360_cache"
 FRONTEND_DIR = ROOT_DIR / "panoconfig360_frontend"
 os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
+TILE_RE = re.compile(r"^[0-9a-z]+_[tblr]_\d+_\d+_\d+\.jpg$")
+
+USE_MASK_STACK = True
+
+if USE_MASK_STACK:
+    from panoconfig360_backend.render.dynamic_stack_with_masks import stack_layers_image_only
+else:
+    from panoconfig360_backend.render.dynamic_stack import stack_layers_image_only
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -129,16 +139,16 @@ def render_cubemap(
     # ======================================================
     # 🧮 BUILD STRING (SEM PROCESSAR IMAGEM)
     # ======================================================
-    scene_prefix = encode_index(scene_index)
-    layers_body = build_string_from_selection(scene_layers, selection)
-    build_str = scene_prefix + layers_body
+
+    build_str = build_string_from_selection(
+        scene_index, scene_layers, selection)
 
     logging.info(f"🔑 Build string: {build_str} ({len(build_str)} chars)")
 
     # ======================================================
     # 🔍 VERIFICA CACHE
     # ======================================================
-    tile_root = f"cubemap/{client_id}/{scene_id}/tiles/{build_str}"
+    tile_root = f"clients/{client_id}/cubemap/{scene_id}/tiles/{build_str}"
     metadata_key = f"{tile_root}/metadata.json"
 
     cache_exists = exists(metadata_key)
@@ -146,11 +156,18 @@ def render_cubemap(
 
     if cache_exists:
         logging.info(f"✅ Cache hit: {build_str}")
+
+        tiles = {
+            "baseUrl": "/panoconfig360_cache",
+            "tileRoot": tile_root,
+            "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
+            "build": build_str,
+        }
+
         return {
             "status": "cached",
             "build": build_str,
-            "tileRoot": tile_root,
-            "message": "Tiles já existem no cache."
+            "tiles": tiles,
         }
 
     # ======================================================
@@ -224,14 +241,19 @@ def render_cubemap(
         elapsed = time.monotonic() - start
         logging.info(f"✅ Render completo em {elapsed:.2f}s")
 
+        tiles = {
+            "baseUrl": "/panoconfig360_cache",
+            "tileRoot": tile_root,
+            "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
+            "build": build_str,
+        }
+
         return {
             "status": "generated",
             "client": client_id,
             "scene": scene_id,
             "build": build_str,
-            "tileRoot": tile_root,
-            "tiles_count": uploaded_count,
-            "elapsed_seconds": round(elapsed, 2),
+            "tiles": tiles,
         }
 
     except Exception as e:
@@ -276,16 +298,16 @@ def render_2d(payload: Render2DRequest):
     # ======================================================
     # 🧮 BUILD STRING (MESMA LÓGICA DO CUBEMAP)
     # ======================================================
-    scene_prefix = encode_index(scene_index)
-    layers_body = build_string_from_selection(scene_layers, selection)
-    build_str = scene_prefix + layers_body
+
+    build_str = build_string_from_selection(
+        scene_index, scene_layers, selection)
 
     logging.info(f"🔑 Build string 2D: {build_str} ({len(build_str)} chars)")
 
     # ======================================================
     # 🔍 VERIFICA CACHE
     # ======================================================
-    cdn_key = f"renders/{client_id}/{scene_id}/{build_str}.jpg"
+    cdn_key = f"clients/{client_id}/renders/{scene_id}/{build_str}.jpg"
 
     cache_exists = exists(cdn_key)
     logging.info(f"🔍 Cache 2D check: {cdn_key} → exists={cache_exists}")
@@ -405,3 +427,39 @@ def serve_frontend():
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "panoconfig360-backend", "version": "0.0.1"}
+
+
+@app.get("/panoconfig360_cache/cubemap/{client_id}/{scene_id}/tiles/{build}/{filename}")
+def get_tile(client_id: str, scene_id: str, build: str, filename: str):
+
+    # valida build
+    build = validate_build_string(build)
+
+    # valida filename estritamente
+    if not TILE_RE.match(filename):
+        raise HTTPException(400, "Tile inválido")
+
+    # filename deve começar com build correto
+    if not filename.startswith(build + "_"):
+        raise HTTPException(400, "Tile não pertence à build")
+
+    # caminho isolado por tenant e cena
+    tile_path = (
+        LOCAL_CACHE_DIR
+        / "clients"
+        / client_id
+        / "cubemap"
+        / scene_id
+        / "tiles"
+        / build
+        / filename
+    )
+
+    if not tile_path.exists():
+        raise HTTPException(404, "Tile não encontrado")
+
+    return FileResponse(
+        tile_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

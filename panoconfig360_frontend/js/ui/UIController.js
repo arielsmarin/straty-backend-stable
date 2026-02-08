@@ -21,16 +21,16 @@ export class UIController {
     this._submenuPreviewLabel = null;
     this._submenuTileList = null;
 
+    this._createSceneToggleButton();
     this._bindSave2RenderButton();
-    this._createSceneSelectorButton();
   }
 
   /**
    * Cria botão para abrir seletor de cenas
    */
-  _createSceneSelectorButton() {
-    const uiContainer = document.querySelector('.ui-container');
-    if (!uiContainer) return;
+  _createSceneToggleButton() {
+    const container = document.querySelector('.ui-container');
+    if (!container) return;
 
     // Verifica se já existe
     if (document.getElementById('scene-toggle-btn')) return;
@@ -46,7 +46,7 @@ export class UIController {
     };
 
     // Insere no início do container
-    uiContainer.insertBefore(btn, uiContainer.firstChild);
+    container.insertBefore(btn, container.firstChild);
   }
 
   /**
@@ -87,7 +87,6 @@ export class UIController {
       thumb.className = "menu-item-thumbnail";
       thumb.src = selectedItem?.thumbnail || "";
       thumb.alt = selectedItem?.label || "";
-      thumb.onerror = () => { thumb.style.display = 'none'; };
 
       const text = document.createElement("div");
       text.className = "menu-item-text";
@@ -183,7 +182,6 @@ export class UIController {
       const img = document.createElement("img");
       img.src = selectedItem.thumbnail || "";
       img.alt = selectedItem.label;
-      img.onerror = () => { img.style.display = 'none'; };
 
       const label = document.createElement("div");
       label.className = "submenu-main-label";
@@ -219,7 +217,6 @@ export class UIController {
       const img = document.createElement("img");
       img.src = item.thumbnail || "";
       img.alt = item.label;
-      img.onerror = () => { img.style.display = 'none'; };
 
       const label = document.createElement("div");
       label.className = "tile-label";

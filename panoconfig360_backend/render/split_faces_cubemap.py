@@ -3,6 +3,7 @@
 import os
 from PIL import Image
 from pathlib import Path
+import numpy as np
 
 
 # Ordem das faces no strip vertical (de cima para baixo)
@@ -59,7 +60,8 @@ def split_faces_from_image(
         else:
             marzipano_face = MARZIPANO_FACE_MAP[face_key]
 
-        _generate_tiles(face_img, output_base_dir, marzipano_face, tile_size, level, build)
+        _generate_tiles(face_img, output_base_dir,
+                        marzipano_face, tile_size, level, build)
 
 
 def _generate_tiles(face_img: Image.Image, out_dir: str, face: str, tile_size: int, lod: int, build: str):
@@ -81,7 +83,7 @@ def _generate_tiles(face_img: Image.Image, out_dir: str, face: str, tile_size: i
 
             filename = f"{build}_{face}_{lod}_{x}_{y}.jpg"
             tile_path = os.path.join(out_dir, filename)
-            tile.save(tile_path, "JPEG", quality=85)
+            tile.save(tile_path, "JPEG", quality=95, subsampling=0)
 
 # Função principal para processar o cubemap
 

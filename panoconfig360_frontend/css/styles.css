@@ -376,12 +376,9 @@ section {
 }
 
 /* ======================================================
- * SELETOR DE CENAS
+ * SELETOR DE CENAS - ATUALIZADO
  * ====================================================== */
 
-/* Adicione estes estilos ao seu styles.css */
-
-/* Scene Selector */
 .scene-selector {
   position: fixed;
   top: 50%;
@@ -389,26 +386,28 @@ section {
   transform: translate(-50%, -50%);
   background: rgba(0, 0, 0, 0.95);
   border-radius: 12px;
-  padding: 20px;
+  padding: 0;
   z-index: 1000;
   min-width: 300px;
   display: none;
   flex-direction: column;
-  gap: 15px;
+  overflow: hidden;
 }
 
 .scene-selector-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-  padding-bottom: 10px;
+  padding: 15px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .scene-selector-header h3 {
   margin: 0;
   color: #fff;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .scene-selector-close {
@@ -419,27 +418,41 @@ section {
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.scene-selector-close:hover {
+  opacity: 1;
 }
 
 .scene-buttons {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
+  padding: 10px;
 }
 
 .scene-button {
   padding: 15px 20px;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.2);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   color: #fff;
   cursor: pointer;
   transition: all 0.2s;
-  font-size: 16px;
+  font-size: 14px;
+  text-align: left;
+  margin-bottom: 8px;
+}
+
+.scene-button:last-child {
+  margin-bottom: 0;
 }
 
 .scene-button:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .scene-button.active {
@@ -449,29 +462,37 @@ section {
 
 /* Scene Toggle Button */
 .scene-toggle-btn {
-  padding: 10px 15px;
-  background: #007bff;
-  border: none;
-  border-radius: 6px;
+  width: 100%;
+  padding: 12px 15px;
+  background: linear-gradient(135deg, #333 0%, #1a1a1a 100%);
+  border: 1px solid #444;
+  border-radius: 8px;
   color: #fff;
   cursor: pointer;
-  font-size: 14px;
-  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 15px;
+  transition: all 0.2s;
+  text-align: center;
 }
 
 .scene-toggle-btn:hover {
-  background: #0056b3;
+  background: linear-gradient(135deg, #444 0%, #2a2a2a 100%);
+  border-color: #555;
 }
 
-/* Render Modal */
+/* ======================================================
+ * RENDER 2D MODAL
+ * ====================================================== */
+
 .render-modal {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.8);
-  display: flex;
+  background: rgba(0, 0, 0, 0.85);
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 2000;
@@ -485,6 +506,8 @@ section {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 400px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 .render-modal-header {
@@ -492,12 +515,15 @@ section {
   justify-content: space-between;
   align-items: center;
   padding: 15px 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .render-modal-header h3 {
   margin: 0;
   color: #fff;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .render-modal-close {
@@ -508,6 +534,12 @@ section {
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.render-modal-close:hover {
+  opacity: 1;
 }
 
 .render-modal-body {
@@ -515,35 +547,86 @@ section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  gap: 20px;
+  overflow-y: auto;
 }
 
 .render-preview-image {
   max-width: 100%;
   max-height: 60vh;
   border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .render-download-btn {
-  padding: 12px 24px;
+  padding: 12px 30px;
   background: #28a745;
   color: #fff;
   text-decoration: none;
-  border-radius: 6px;
-  font-size: 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
 }
 
 .render-download-btn:hover {
   background: #218838;
 }
 
-.render-loading,
-.render-error {
-  padding: 40px;
+.render-loading {
+  padding: 60px 40px;
   color: #fff;
   font-size: 16px;
+  text-align: center;
+}
+
+.render-loading::after {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin: 20px auto 0;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .render-error {
+  padding: 60px 40px;
   color: #dc3545;
+  font-size: 16px;
+  text-align: center;
+}
+
+/* ======================================================
+ * RESPONSIVO - MODAIS
+ * ====================================================== */
+
+@media (max-width: 768px) {
+  .scene-selector {
+    min-width: 280px;
+    width: 90vw;
+  }
+
+  .render-modal-content {
+    min-width: auto;
+    width: 95vw;
+    max-height: 85vh;
+  }
+
+  .render-preview-image {
+    max-height: 50vh;
+  }
+  
+  .scene-toggle-btn {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
 }

@@ -1,20 +1,16 @@
-/**
- * main.js
- * Ponto de entrada da aplicação - Orquestrador principal
- */
-
-import { ConfigLoader } from './config/ConfigLoader.js';
-import { Configurator } from './core/Configurator.js';
-import { ViewerManager } from './viewer/ViewerManager.js';
-import { RenderService } from './services/RenderService.js';
-import { UIController } from './ui/UIController.js';
-import { SceneSelector } from './ui/SceneSelector.js';
+import { ConfigLoader } from "./config/ConfigLoader.js";
+import { Configurator } from "./core/Configurator.js";
+import { ViewerManager } from "./viewer/ViewerManager.js";
+import { RenderService } from "./services/RenderService.js";
+import { UIController } from "./ui/UIController.js";
+import { SceneSelector } from "./ui/SceneSelector.js";
+import { Render2DModal } from "./ui/Render2DModal.js";
 
 // ======================================================
 // CONFIGURAÇÃO
 // ======================================================
-const CLIENT_ID = 'monte-negro';
-const VIEWER_CONTAINER_ID = 'pano-config-api';
+const CLIENT_ID = "monte-negro";
+const VIEWER_CONTAINER_ID = "pano-config-api";
 
 // ======================================================
 // INSTÂNCIAS GLOBAIS
@@ -25,15 +21,20 @@ let viewerManager = null;
 let renderService = null;
 let uiController = null;
 let sceneSelector = null;
+let render2DModal = null;
+let loading = false;
+let pendingReload = false;
+let renderDebounceTimer = null;
+let currentAbortController = null;
 
 // ======================================================
 // INICIALIZAÇÃO
 // ======================================================
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   try {
-    console.log('[Main] Iniciando aplicação...');
+    console.log("[Main] Iniciando aplicação...");
 
     // 1. Carrega configuração do cliente
     configLoader = new ConfigLoader(CLIENT_ID);
@@ -41,76 +42,110 @@ async function init() {
 
     // 2. Cria o configurator
     configurator = new Configurator(configLoader);
+
+    // ⚠️ SEMPRE inicializa padrão primeiro
     configurator.initializeSelection();
 
     // 3. Inicializa o viewer
     const viewerConfig = configLoader.getViewerConfig();
     viewerManager = new ViewerManager(VIEWER_CONTAINER_ID, viewerConfig);
-    viewerManager.initialize();
+    await viewerManager.initialize();
 
-    // 4. Cria o serviço de render
+    // 4. Serviços
     renderService = new RenderService();
+    render2DModal = new Render2DModal();
 
-    // 5. Cria o seletor de cenas
+    // 5. Scene selector
     const scenes = configLoader.getSceneList();
-    sceneSelector = new SceneSelector('scene-selector', handleSceneChange);
-    sceneSelector.render(scenes, configLoader.currentSceneId);
+    sceneSelector = new SceneSelector("scene-selector", handleSceneChange);
+    sceneSelector.render(scenes, configurator.sceneId);
 
-    // 6. Cria o controlador de UI
+    // 6. UI
     uiController = new UIController(configurator, {
       onSelectionChange: handleSelectionChange,
       onFocusRequest: handleFocusRequest,
       onSave2Render: handleSave2Render,
-      onToggleSceneSelector: toggleSceneSelector
+      onToggleSceneSelector: handleToggleSceneSelector,
     });
     uiController.renderMainMenu();
 
-    // 7. Carrega a cena inicial
-    await loadCurrentScene(false);
+    // 7. Deep-link (AGORA é seguro)
+    const buildFromUrl = getBuildFromUrl();
 
-    console.log('[Main] Aplicação iniciada com sucesso!');
+    if (buildFromUrl) {
+      console.log("[Main] Aplicando build da URL:", buildFromUrl);
 
+      const result = await renderService.renderCubemap(
+        configLoader.clientId,
+        configurator.sceneId,
+        configurator.currentSelection,
+      );
+
+      await viewerManager.loadScene(result.tiles);
+    } else {
+      // 🔴 carregar cena inicial padrão
+      console.log("[Main] Carregando cena inicial padrão");
+
+      await loadCurrentScene();
+    }
+
+    console.log("[Main] Aplicação iniciada com sucesso!");
   } catch (error) {
-    console.error('[Main] Erro na inicialização:', error);
+    console.error("[Main] Erro na inicialização:", error);
   }
+}
+
+function updateUrl(build) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("build", build);
+  window.history.replaceState({}, "", url);
+}
+
+function getBuildFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("build");
 }
 
 // ======================================================
 // HANDLERS
 // ======================================================
 
-/**
- * Carrega a cena atual no viewer
- * @param {boolean} preserveView - Se deve manter a posição da câmera
- */
-async function loadCurrentScene(preserveView = true) {
-  const clientId = configLoader.clientId;
-  const sceneId = configurator.sceneId;
-  const selection = configurator.currentSelection;
+// Carrega a cena atual baseada na seleção do configurator
+async function loadCurrentScene() {
+  // cancela request anterior
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
 
-  console.log(`[Main] Carregando cena: ${sceneId}`);
+  currentAbortController = new AbortController();
 
   try {
-    // Solicita renderização ao backend
-    const result = await renderService.renderCubemap(clientId, sceneId, selection);
-    console.log('[Main] Render result:', result);
+    const result = await renderService.renderCubemap(
+      configLoader.clientId,
+      configurator.sceneId,
+      configurator.currentSelection,
+      currentAbortController.signal,
+    );
 
-    // Carrega os tiles no viewer
-    await viewerManager.loadScene(clientId, sceneId, result.build, preserveView);
+    if (!result?.tiles) return;
 
-  } catch (error) {
-    console.error('[Main] Erro ao carregar cena:', error);
+    await viewerManager.loadScene(result.tiles);
+    updateUrl(result.build);
+  } catch (err) {
+    // ignora abort silenciosamente
+    if (err.name === "AbortError") return;
+
+    console.error("[Main] Erro ao carregar cena:", err);
   }
 }
 
-/**
- * Handler para mudança de seleção (material)
- */
-async function handleSelectionChange(selection) {
-  console.log('[Main] Seleção alterada:', selection);
-  
-  // Atualiza o viewer mantendo a câmera
-  await loadCurrentScene(true);
+// Handler para mudança de seleção
+async function handleSelectionChange() {
+  clearTimeout(renderDebounceTimer);
+
+  renderDebounceTimer = setTimeout(() => {
+    loadCurrentScene();
+  }, 180); // 150–220ms é o sweet spot
 }
 
 /**
@@ -126,24 +161,24 @@ function handleFocusRequest(layerId) {
  */
 async function handleSceneChange(sceneId) {
   console.log(`[Main] Mudando para cena: ${sceneId}`);
-  
+
   // Troca a cena no configurator
   configurator.switchScene(sceneId);
-  
+
   // Atualiza UI
   uiController.setConfigurator(configurator);
-  
+
   // Fecha o seletor de cenas
   sceneSelector.hide();
-  
-  // Carrega a nova cena (não preserva câmera pois é outra cena)
-  await loadCurrentScene(false);
+
+  // Carrega a nova cena
+  await loadCurrentScene();
 }
 
 /**
- * Toggle do seletor de cenas
+ * Handler para toggle do seletor de cenas
  */
-function toggleSceneSelector() {
+function handleToggleSceneSelector() {
   sceneSelector.toggle();
 }
 
@@ -155,89 +190,23 @@ async function handleSave2Render() {
   const sceneId = configurator.sceneId;
   const selection = configurator.currentSelection;
 
-  console.log('[Main] Solicitando render 2D...');
+  console.log("[Main] Solicitando render 2D...");
 
-  // Mostra modal de loading
-  showRenderModal('loading');
+  // Mostra loading
+  render2DModal.showLoading();
 
   try {
     const result = await renderService.render2D(clientId, sceneId, selection);
-    console.log('[Main] Render 2D result:', result);
+    console.log("[Main] Render 2D result:", result);
 
     // Mostra a imagem no modal
     if (result.url) {
-      showRenderModal('success', result.url);
+      render2DModal.showImage(result.url);
+    } else {
+      render2DModal.showError("URL da imagem não retornada");
     }
-
   } catch (error) {
-    console.error('[Main] Erro no render 2D:', error);
-    showRenderModal('error', null, error.message);
+    console.error("[Main] Erro no render 2D:", error);
+    render2DModal.showError("Erro ao gerar render: " + error.message);
   }
-}
-
-/**
- * Mostra o modal de renderização
- */
-function showRenderModal(state, imageUrl = null, errorMessage = null) {
-  // Remove modal existente se houver
-  let modal = document.getElementById('render-modal');
-  if (modal) {
-    modal.remove();
-  }
-
-  // Cria o modal
-  modal = document.createElement('div');
-  modal.id = 'render-modal';
-  modal.className = 'render-modal';
-
-  const content = document.createElement('div');
-  content.className = 'render-modal-content';
-
-  // Header com botão fechar
-  const header = document.createElement('div');
-  header.className = 'render-modal-header';
-  
-  const title = document.createElement('h3');
-  title.textContent = 'Renderização 2D';
-  
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'render-modal-close';
-  closeBtn.textContent = '×';
-  closeBtn.onclick = () => modal.remove();
-  
-  header.append(title, closeBtn);
-  content.appendChild(header);
-
-  // Body
-  const body = document.createElement('div');
-  body.className = 'render-modal-body';
-
-  if (state === 'loading') {
-    body.innerHTML = '<div class="render-loading">Gerando imagem...</div>';
-  } else if (state === 'success' && imageUrl) {
-    const img = document.createElement('img');
-    img.src = imageUrl;
-    img.className = 'render-preview-image';
-    img.alt = 'Renderização 2D';
-    
-    const downloadBtn = document.createElement('a');
-    downloadBtn.href = imageUrl;
-    downloadBtn.download = 'render-2d.jpg';
-    downloadBtn.className = 'render-download-btn';
-    downloadBtn.textContent = 'Download';
-    
-    body.append(img, downloadBtn);
-  } else if (state === 'error') {
-    body.innerHTML = `<div class="render-error">Erro: ${errorMessage || 'Falha na renderização'}</div>`;
-  }
-
-  content.appendChild(body);
-  modal.appendChild(content);
-
-  // Fecha ao clicar fora
-  modal.onclick = (e) => {
-    if (e.target === modal) modal.remove();
-  };
-
-  document.body.appendChild(modal);
 }

@@ -1,0 +1,408 @@
+{
+  "schemaVersion": "2.0",
+  "client": {
+    "id": "monte-negro",
+    "label": "Monte Negro"
+  },
+
+  "project": {
+    "configStringBase": 36,
+    "buildChars": 2,
+    "description": "Empilhamento on-demand via R2, 1 config por cliente"
+  },
+
+  "naming": {
+    "tilePattern": "{BUILD}_{FACE}_{LOD}_{X}_{Y}.jpg",
+    "metadataPattern": "{BUILD}.json"
+  },
+
+  "viewer": {
+    "type": "pano_cubic",
+    "tileSize": 512,
+    "cubeSize": 1024,
+    "defaultFov": 1.5708,
+    "camera_rotation_max": 1.5708,
+    "camera_rotation_min": -1.57,
+    "limit_camera_rotation": 0
+  },
+
+  "scenes": {
+    "kitchen": {
+      "id": "kitchen",
+      "scene_index": 0,
+      "label": "Kitchen",
+      "layers": [
+        {
+          "id": "backsplash",
+          "build_order": 0,
+          "label": "Backsplash",
+          "mask": "layer_kitchen_backsplash_mask.png",
+          "items": [
+            {
+              "index": 2,
+              "id": "chantilly",
+              "label": "Chantilly",
+              "thumbnail": "css/thumbs/thumb_chantilly.jpg",
+              "file": "mtl_chantilly.png"
+            },
+            {
+              "index": 4,
+              "id": "diamond-black",
+              "label": "Diamond Black",
+              "thumbnail": "css/thumbs/thumb_diamond-black.jpg",
+              "file": "mtl_diamond-black.png"
+            },
+            {
+              "index": 7,
+              "id": "perla-venata",
+              "label": "Perla Venata",
+              "thumbnail": "css/thumbs/thumb_perla-venata.jpg",
+              "file": "mtl_perla-venata.png"
+            },
+            {
+              "index": 8,
+              "id": "bianco-neva",
+              "label": "Bianco Neva",
+              "thumbnail": "css/thumbs/thumb_bianco-neva.jpg",
+              "file": null
+            },
+            {
+              "index": 9,
+              "id": "le-blanc",
+              "label": "Le Blanc",
+              "thumbnail": "css/thumbs/thumb_le-blanc.jpg",
+              "file": "mtl_le-blanc.png"
+            },
+            {
+              "index": 10,
+              "id": "antartida",
+              "label": "Antartida",
+              "thumbnail": "css/thumbs/thumb_antartida.jpg",
+              "file": "mtl_antartida.png"
+            },
+            {
+              "index": 11,
+              "id": "naica",
+              "label": "Naica",
+              "thumbnail": "css/thumbs/thumb_naica.jpg",
+              "file": "mtl_naica.png"
+            },
+            {
+              "index": 12,
+              "id": "matterhorn",
+              "label": "Matterhorn",
+              "thumbnail": "css/thumbs/thumb_matterhorn.jpg",
+              "file": "mtl_matterhorn.png"
+            }
+          ]
+        },
+        {
+          "id": "island",
+          "build_order": 1,
+          "label": "Ilha",
+          "mask": "layer_kitchen_island_mask.png",
+          "items": [
+            {
+              "index": 2,
+              "id": "chantilly",
+              "label": "Chantilly",
+              "thumbnail": "css/thumbs/thumb_chantilly.jpg",
+              "file": "mtl_chantilly.png"
+            },
+            {
+              "index": 4,
+              "id": "diamond-black",
+              "label": "Diamond Black",
+              "thumbnail": "css/thumbs/thumb_diamond-black.jpg",
+              "file": "mtl_diamond-black.png"
+            },
+            {
+              "index": 7,
+              "id": "perla-venata",
+              "label": "Perla Venata",
+              "thumbnail": "css/thumbs/thumb_perla-venata.jpg",
+              "file": "mtl_perla-venata.png"
+            },
+            {
+              "index": 8,
+              "id": "bianco-neva",
+              "label": "Bianco Neva",
+              "thumbnail": "css/thumbs/thumb_bianco-neva.jpg",
+              "file": null
+            },
+            {
+              "index": 9,
+              "id": "le-blanc",
+              "label": "Le Blanc",
+              "thumbnail": "css/thumbs/thumb_le-blanc.jpg",
+              "file": "mtl_le-blanc.png"
+            },
+            {
+              "index": 10,
+              "id": "antartida",
+              "label": "Antartida",
+              "thumbnail": "css/thumbs/thumb_antartida.jpg",
+              "file": "mtl_antartida.png"
+            },
+            {
+              "index": 11,
+              "id": "naica",
+              "label": "Naica",
+              "thumbnail": "css/thumbs/thumb_naica.jpg",
+              "file": "mtl_naica.png"
+            },
+            {
+              "index": 12,
+              "id": "matterhorn",
+              "label": "Matterhorn",
+              "thumbnail": "css/thumbs/thumb_matterhorn.jpg",
+              "file": "mtl_matterhorn.png"
+            }
+          ]
+        },
+        {
+          "id": "countertop",
+          "build_order": 2,
+          "label": "Bancada",
+          "mask": "layer_kitchen_countertop_mask.png",
+          "items": [
+            {
+              "index": 2,
+              "id": "chantilly",
+              "label": "Chantilly",
+              "thumbnail": "css/thumbs/thumb_chantilly.jpg",
+              "file": "mtl_chantilly.png"
+            },
+            {
+              "index": 4,
+              "id": "diamond-black",
+              "label": "Diamond Black",
+              "thumbnail": "css/thumbs/thumb_diamond-black.jpg",
+              "file": "mtl_diamond-black.png"
+            },
+            {
+              "index": 7,
+              "id": "perla-venata",
+              "label": "Perla Venata",
+              "thumbnail": "css/thumbs/thumb_perla-venata.jpg",
+              "file": "mtl_perla-venata.png"
+            },
+            {
+              "index": 8,
+              "id": "bianco-neva",
+              "label": "Bianco Neva",
+              "thumbnail": "css/thumbs/thumb_bianco-neva.jpg",
+              "file": null
+            },
+            {
+              "index": 9,
+              "id": "le-blanc",
+              "label": "Le Blanc",
+              "thumbnail": "css/thumbs/thumb_le-blanc.jpg",
+              "file": "mtl_le-blanc.png"
+            },
+            {
+              "index": 10,
+              "id": "antartida",
+              "label": "Antartida",
+              "thumbnail": "css/thumbs/thumb_antartida.jpg",
+              "file": "mtl_antartida.png"
+            },
+            {
+              "index": 11,
+              "id": "naica",
+              "label": "Naica",
+              "thumbnail": "css/thumbs/thumb_naica.jpg",
+              "file": "mtl_naica.png"
+            },
+            {
+              "index": 12,
+              "id": "matterhorn",
+              "label": "Matterhorn",
+              "thumbnail": "css/thumbs/thumb_matterhorn.jpg",
+              "file": "mtl_matterhorn.png"
+            }
+          ]
+        }
+      ]
+    },
+    "gourmet": {
+      "id": "gourmet",
+      "scene_index": 1,
+      "label": "Gourmet",
+      "layers": [
+        {
+          "id": "barbecue",
+          "build_order": 0,
+          "label": "Churrasqueira",
+          "mask": "layer_gourmet_barbecue_mask.png",
+          "items": [
+            {
+              "index": 0,
+              "id": "baccarat",
+              "label": "Baccarat",
+              "thumbnail": "css/thumbs/thumb_baccarat.jpg",
+              "file": null
+            },
+            {
+              "index": 1,
+              "id": "blue-deep",
+              "label": "Blue Deep",
+              "thumbnail": "css/thumbs/thumb_blue-deep.jpg",
+              "file": "mtl_blue-deep.png"
+            },
+            {
+              "index": 5,
+              "id": "royal-luise-blue",
+              "label": "Royal Luise Blue",
+              "thumbnail": "css/thumbs/thumb_royal-luise-blue.jpg",
+              "file": "mtl_royal-luise-blue.png"
+            },
+            {
+              "index": 6,
+              "id": "original-luise-blue",
+              "label": "Original Luise Blue",
+              "thumbnail": "css/thumbs/thumb_original-luise-blue.jpg",
+              "file": "mtl_original-luise-blue.png"
+            },
+            {
+              "index": 13,
+              "id": "acqua-luise",
+              "label": "Acqua Luise",
+              "thumbnail": "css/thumbs/thumb_acqua-luise.jpg",
+              "file": "mtl_acqua-luise.png"
+            },
+            {
+              "index": 14,
+              "id": "zumaya",
+              "label": "Zumaya",
+              "thumbnail": "css/thumbs/thumb_zumaya.jpg",
+              "file": "mtl_zumaya.png"
+            },
+            {
+              "index": 15,
+              "id": "everglades",
+              "label": "Everglades",
+              "thumbnail": "css/thumbs/thumb_everglades.jpg",
+              "file": "mtl_everglades.png"
+            }
+          ]
+        },
+        {
+          "id": "island",
+          "build_order": 1,
+          "label": "Ilha",
+          "mask": "layer_gourmet_island_mask.png",
+          "items": [
+            {
+              "index": 0,
+              "id": "baccarat",
+              "label": "Baccarat",
+              "thumbnail": "css/thumbs/thumb_baccarat.jpg",
+              "file": null
+            },
+            {
+              "index": 1,
+              "id": "blue-deep",
+              "label": "Blue Deep",
+              "thumbnail": "css/thumbs/thumb_blue-deep.jpg",
+              "file": "mtl_blue-deep.png"
+            },
+            {
+              "index": 5,
+              "id": "royal-luise-blue",
+              "label": "Royal Luise Blue",
+              "thumbnail": "css/thumbs/thumb_royal-luise-blue.jpg",
+              "file": "mtl_royal-luise-blue.png"
+            },
+            {
+              "index": 6,
+              "id": "original-luise-blue",
+              "label": "Original Luise Blue",
+              "thumbnail": "css/thumbs/thumb_original-luise-blue.jpg",
+              "file": "mtl_original-luise-blue.png"
+            },
+            {
+              "index": 13,
+              "id": "acqua-luise",
+              "label": "Acqua Luise",
+              "thumbnail": "css/thumbs/thumb_acqua-luise.jpg",
+              "file": "mtl_acqua-luise.png"
+            },
+            {
+              "index": 14,
+              "id": "zumaya",
+              "label": "Zumaya",
+              "thumbnail": "css/thumbs/thumb_zumaya.jpg",
+              "file": "mtl_zumaya.png"
+            },
+            {
+              "index": 15,
+              "id": "everglades",
+              "label": "Everglades",
+              "thumbnail": "css/thumbs/thumb_everglades.jpg",
+              "file": "mtl_everglades.png"
+            }
+          ]
+        },
+        {
+          "id": "countertop",
+          "build_order": 2,
+          "label": "Bancada",
+          "mask": "layer_gourmet_countertop_mask.png",
+          "items": [
+            {
+              "index": 0,
+              "id": "baccarat",
+              "label": "Baccarat",
+              "thumbnail": "css/thumbs/thumb_baccarat.jpg",
+              "file": null
+            },
+            {
+              "index": 1,
+              "id": "blue-deep",
+              "label": "Blue Deep",
+              "thumbnail": "css/thumbs/thumb_blue-deep.jpg",
+              "file": "mtl_blue-deep.png"
+            },
+            {
+              "index": 5,
+              "id": "royal-luise-blue",
+              "label": "Royal Luise Blue",
+              "thumbnail": "css/thumbs/thumb_royal-luise-blue.jpg",
+              "file": "mtl_royal-luise-blue.png"
+            },
+            {
+              "index": 6,
+              "id": "original-luise-blue",
+              "label": "Original Luise Blue",
+              "thumbnail": "css/thumbs/thumb_original-luise-blue.jpg",
+              "file": "mtl_original-luise-blue.png"
+            },
+            {
+              "index": 13,
+              "id": "acqua-luise",
+              "label": "Acqua Luise",
+              "thumbnail": "css/thumbs/thumb_acqua-luise.jpg",
+              "file": "mtl_acqua-luise.png"
+            },
+            {
+              "index": 14,
+              "id": "zumaya",
+              "label": "Zumaya",
+              "thumbnail": "css/thumbs/thumb_zumaya.jpg",
+              "file": "mtl_zumaya.png"
+            },
+            {
+              "index": 15,
+              "id": "everglades",
+              "label": "Everglades",
+              "thumbnail": "css/thumbs/thumb_everglades.jpg",
+              "file": "mtl_everglades.png"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

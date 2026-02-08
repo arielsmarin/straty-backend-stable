@@ -1,6 +1,6 @@
 from pathlib import Path
 
-ASSETS_ROOT = Path("panoconfig360_backend/assets/clients")
+ASSETS_ROOT = Path("panoconfig360_cache/clients")
 
 
 def resolve_scene_context(project: dict, scene_id: str | None):

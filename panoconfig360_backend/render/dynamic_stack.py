@@ -10,7 +10,10 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 # 🔧 CONSTANTES
 # ======================================================
 CONFIG_STRING_BASE = 36
-FIXED_LAYERS = 13
+FIXED_LAYERS = 5
+SCENE_CHARS = 2
+LAYER_CHARS = 2
+BUILD_TOTAL = SCENE_CHARS + FIXED_LAYERS * LAYER_CHARS
 
 
 def get_build_chars() -> int:
@@ -102,12 +105,14 @@ def decode_index(s: str) -> int:
 # 🔢 BUILD STRING
 # ======================================================
 
-def build_string_from_selection(layers: list, selection: dict) -> str:
-    config = [encode_index(0)] * FIXED_LAYERS
+def build_string_from_selection(scene_index: int, layers: list, selection: dict) -> str:
+    parts = [base36_encode(scene_index, SCENE_CHARS)]
+
+    layer_values = [0] * FIXED_LAYERS
 
     for layer in layers:
         build_order = layer.get("build_order", 0)
-        
+
         if build_order < 0 or build_order >= FIXED_LAYERS:
             continue
 
@@ -125,10 +130,12 @@ def build_string_from_selection(layers: list, selection: dict) -> str:
         if not item:
             continue
 
-        index = item.get("index", 0)
-        config[build_order] = encode_index(index)
+        layer_values[build_order] = item.get("index", 0)
 
-    return "".join(config)
+    for v in layer_values:
+        parts.append(base36_encode(v, LAYER_CHARS))
+
+    return "".join(parts)
 
 
 # ======================================================
@@ -186,7 +193,8 @@ def stack_layers_image_only(
         overlay.close()
 
     if missing_overlays:
-        logging.warning(f"⚠️ Overlays ausentes (ignorados): {missing_overlays}")
+        logging.warning(
+            f"⚠️ Overlays ausentes (ignorados): {missing_overlays}")
 
     logging.info(f"✅ Stack de imagem gerado: {base.size}")
     return base.convert("RGB")
