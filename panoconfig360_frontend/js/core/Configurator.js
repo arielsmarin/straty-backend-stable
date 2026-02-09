@@ -5,6 +5,11 @@
 
 import { EventEmitter } from "../utils/EventEmitter.js";
 
+// Constantes para configuração da build string
+const FIXED_LAYERS = 5;
+const SCENE_CHARS = 2;
+const LAYER_CHARS = 2;
+
 export class Configurator extends EventEmitter {
   constructor(configLoader) {
     super();
@@ -29,38 +34,78 @@ export class Configurator extends EventEmitter {
     return this._configLoader.clientId;
   }
 
+  applyResolvedState(scene, selection) {
+    this._currentSceneId = scene;
+    this._selection = selection;
+
+    this.emit("selectionChanged", this._selection);
+  }
+
   initializeFromBuild(buildString) {
-    // proteção: build inválida
-    if (!buildString || typeof buildString !== "string") {
+    // 🔐 validação defensiva
+    if (typeof buildString !== "string" || buildString.length !== 12) {
+      console.warn("[Configurator] Build inválida, usando defaults");
       this.initializeSelection();
       return;
     }
 
-    const charsPerLayer = this.project.buildChars;
-    const base = this.project.configStringBase;
+    // ======================================================
+    // 1️⃣ Resolve cena a partir do scene_index
+    // ======================================================
+    const scenePrefix = buildString.slice(0, SCENE_CHARS);
+    const sceneIndex = parseInt(scenePrefix, 36);
 
-    // valida tamanho mínimo
-    if (!buildString || buildString.length < charsPerLayer) {
+    const scenes = this._configLoader.getSceneList();
+    const sceneEntry = scenes.find((s) => s.sceneIndex === sceneIndex);
+
+    if (!sceneEntry) {
+      console.warn("[Configurator] Scene index inválido na build:", sceneIndex);
       this.initializeSelection();
       return;
     }
 
+    // troca cena corretamente
+    this._configLoader.setCurrentScene(sceneEntry.id);
+
+    // ======================================================
+    // 2️⃣ Resolve seleção por layer (FIXED_LAYERS)
+    // ======================================================
     this._currentSelection = {};
 
-    this.layers.forEach((layer, index) => {
-      const start = index * charsPerLayer;
-      const chunk = buildString.slice(start, start + charsPerLayer);
+    for (const layer of this.layers) {
+      const buildOrder = layer.build_order;
 
-      const itemIndex = base === 16 ? parseInt(chunk, 16) : parseInt(chunk, 36);
+      if (
+        typeof buildOrder !== "number" ||
+        buildOrder < 0 ||
+        buildOrder >= FIXED_LAYERS
+      ) {
+        continue;
+      }
 
-      const item = layer.items.find((i) => i.index === itemIndex);
+      const start = SCENE_CHARS + buildOrder * LAYER_CHARS;
+
+      const chunk = buildString.slice(start, start + LAYER_CHARS);
+
+      const itemIndex = parseInt(chunk, 36);
+
+      const item = layer.items?.find((i) => i.index === itemIndex);
 
       if (item) {
         this._currentSelection[layer.id] = item.id;
       }
-    });
+    }
 
+    // ======================================================
+    // 3️⃣ Finaliza estado
+    // ======================================================
     this._buildString = buildString;
+
+    console.log(
+      "[Configurator] Estado restaurado da build:",
+      buildString,
+      this._currentSelection,
+    );
 
     this.emit("selectionChange", this._currentSelection);
   }
@@ -136,13 +181,9 @@ export class Configurator extends EventEmitter {
    * Atualiza a build string baseada na seleção atual
    */
   _updateBuildString() {
-    const scene = this._configLoader.getCurrentScene();
-    if (!scene) {
-      this._buildString = null;
-      return;
-    }
+    this._buildString = null;
 
-    const sceneIndex = scene.scene_index ?? 0;
+    const sceneIndex = this._configLoader.getCurrentScene()?.scene_index ?? 0;
     const scenePrefix = this._encodeIndex(sceneIndex);
 
     const config = new Array(FIXED_LAYERS)
@@ -171,7 +212,7 @@ export class Configurator extends EventEmitter {
   /**
    * Codifica índice em base36
    */
-  _encodeIndex(num, width = 2) {
+  _encodeIndex(num, width = LAYER_CHARS) {
     const chars = "0123456789abcdefghijklmnopqrstuvwxyz";
     let result = "";
     let n = num;

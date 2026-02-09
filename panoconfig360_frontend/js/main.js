@@ -40,6 +40,10 @@ function updateUrl(build) {
   window.history.replaceState({}, "", url);
 }
 
+function isValidBuild(build) {
+  return typeof build === "string" && /^[0-9a-z]{12}$/.test(build);
+}
+
 // ======================================================
 // INICIALIZAÇÃO
 // ======================================================
@@ -53,14 +57,16 @@ async function init() {
     configLoader = new ConfigLoader(CLIENT_ID);
     await configLoader.load();
 
-    // 2. Cria o configurator
+    // 2. Cria configurator
     configurator = new Configurator(configLoader);
 
-    // 3. Verifica se há build na URL
     const buildFromUrl = getBuildFromUrl();
 
-    if (buildFromUrl) {
-      console.log("[Main] Restaurando build da URL:", buildFromUrl);
+    if (isValidBuild(buildFromUrl)) {
+      console.log(
+        "[Main] Inicializando a partir da build da URL:",
+        buildFromUrl,
+      );
       configurator.initializeFromBuild(buildFromUrl);
     } else {
       configurator.initializeSelection();
