@@ -1,0 +1,7 @@
+panoconfig360_cache/clients/monte-negro/cubemap/*
+panoconfig360_cache/clients/monte-negro/renders/*
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
