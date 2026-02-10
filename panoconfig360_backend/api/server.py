@@ -185,7 +185,7 @@ def render_cubemap(
             scene_id=scene_id,
             layers=scene_layers,
             selection=selection,
-            assets_root=assets_root,
+            assets_root=assets_root
         )
 
         # Gera tiles
@@ -265,6 +265,8 @@ def render_cubemap(
         logging.info(f"🧹 Temp removido: {tmp_dir}")
 
 
+# RENDER 2D SIMPLES (SEM CACHE DE TILES, APENAS IMAGEM FINAL)
+
 @app.post("/api/render2d")
 def render_2d(payload: Render2DRequest):
     client_id = payload.client
@@ -273,18 +275,12 @@ def render_2d(payload: Render2DRequest):
 
     logging.info(f"🖼️ Render 2D: client={client_id}, scene={scene_id}")
 
-    # ======================================================
-    # 📦 CARREGA CONFIG
-    # ======================================================
     try:
         project, _ = load_client_config(client_id)
     except Exception as e:
         logging.exception("❌ Falha ao carregar config")
         raise HTTPException(500, f"Erro ao carregar config: {e}")
 
-    # ======================================================
-    # 🎬 RESOLVE CENA
-    # ======================================================
     try:
         ctx = resolve_scene_context(project, scene_id)
     except Exception as e:
@@ -295,19 +291,12 @@ def render_2d(payload: Render2DRequest):
     assets_root = ctx["assets_root"]
     scene_index = ctx["scene_index"]
 
-    # ======================================================
-    # 🧮 BUILD STRING (MESMA LÓGICA DO CUBEMAP)
-    # ======================================================
-
     build_str = build_string_from_selection(
         scene_index, scene_layers, selection)
 
     logging.info(f"🔑 Build string 2D: {build_str} ({len(build_str)} chars)")
 
-    # ======================================================
-    # 🔍 VERIFICA CACHE
-    # ======================================================
-    cdn_key = f"clients/{client_id}/renders/{scene_id}/{build_str}.jpg"
+    cdn_key = f"clients/{client_id}/renders/{scene_id}/2d_{build_str}.jpg"
 
     cache_exists = exists(cdn_key)
     logging.info(f"🔍 Cache 2D check: {cdn_key} → exists={cache_exists}")
@@ -322,81 +311,28 @@ def render_2d(payload: Render2DRequest):
             "url": f"/panoconfig360_cache/{cdn_key}"
         }
 
-    # ======================================================
-    # 🏗️ PROCESSA IMAGEM 2D
-    # ======================================================
+    # 🏗️ PROCESSA IMAGEM 2D (USANDO STACK COM MASKS)
+
     logging.info("🏗️ Cache 2D miss — iniciando processamento...")
 
     start = time.monotonic()
 
-    # Base 2D
-    base_path = assets_root / f"2d_base_{scene_id}.jpg"
-    if not base_path.exists():
-        # Fallback: tenta sem prefixo 2d_
-        base_path = assets_root / f"base_{scene_id}.jpg"
-        if not base_path.exists():
-            raise HTTPException(
-                status_code=500,
-                detail=f"Base 2D não encontrada: {assets_root}/2d_base_{scene_id}.jpg"
-            )
-
-    logging.info(f"📷 Base 2D: {base_path}")
-
-    # Monta lista de overlays
-    ordered_layers = sorted(
-        scene_layers, key=lambda l: l.get("build_order", 0))
-    overlays = []
-
-    for layer in ordered_layers:
-        layer_id = layer["id"]
-        item_id = selection.get(layer_id)
-
-        if not item_id:
-            continue
-
-        item = next(
-            (it for it in layer.get("items", []) if it["id"] == item_id),
-            None
-        )
-
-        if not item:
-            continue
-
-        if item.get("file") is None:
-            continue
-
-        # Tenta overlay com prefixo 2d_
-        overlay_path = assets_root / "layers" / \
-            layer_id / f"2d_{layer_id}_{item_id}.png"
-
-        # Fallback: sem prefixo 2d_
-        if not overlay_path.exists():
-            overlay_path = assets_root / "layers" / \
-                layer_id / f"{layer_id}_{item_id}.png"
-
-        if not overlay_path.exists():
-            logging.warning(f"⚠️ Overlay 2D não encontrado: {overlay_path}")
-            continue
-
-        overlays.append({"path": str(overlay_path)})
-        logging.info(f"  ✅ Overlay: {overlay_path.name}")
-
-    # Gera imagem
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-        output_path = tmp.name
+    output_path = None
 
     try:
-        render_stack_2d(
-            base_image_path=str(base_path),
-            layers=overlays,
-            output_path=output_path
+        img = stack_layers_image_only(
+            scene_id=scene_id,
+            layers=scene_layers,
+            selection=selection,
+            assets_root=assets_root,
+            asset_prefix="2d_",
         )
 
-        # Upload para cache
-        upload_file(output_path, cdn_key, "image/jpeg")
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            output_path = tmp.name
 
-        elapsed = time.monotonic() - start
-        logging.info(f"✅ Render 2D completo em {elapsed:.2f}s")
+        img.save(output_path, "JPEG", quality=95, subsampling=0)
+        upload_file(output_path, cdn_key, "image/jpeg")
 
         return {
             "status": "generated",
@@ -404,15 +340,25 @@ def render_2d(payload: Render2DRequest):
             "scene": scene_id,
             "build": build_str,
             "url": f"/panoconfig360_cache/{cdn_key}",
-            "elapsed_seconds": round(elapsed, 2),
+        }
+
+    except FileNotFoundError as e:
+        logging.error(str(e))
+        return {
+            "status": "error",
+            "type": "missing_asset",
+            "message": str(e),
         }
 
     except Exception as e:
-        logging.exception("❌ Erro no render 2D")
-        raise HTTPException(500, f"Erro interno: {e}")
+        logging.exception("❌ Erro inesperado no render 2D")
+        raise HTTPException(
+            status_code=500,
+            detail="Erro interno no render 2D",
+        )
 
     finally:
-        if os.path.exists(output_path):
+        if output_path is not None and os.path.exists(output_path):
             os.remove(output_path)
 
 

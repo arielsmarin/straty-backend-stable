@@ -161,6 +161,7 @@ def stack_layers_image_only(
     layers: list,
     selection: dict,
     assets_root: Path,
+    asset_prefix: str = "",   # "" (cubemap) | "2d_"
 ) -> Image.Image:
     """
     Novo stack:
@@ -168,13 +169,28 @@ def stack_layers_image_only(
     Mantém assinatura e retorno do método antigo.
     """
 
-    base_image_name = f"base_{scene_id}.png"
-    base_path = assets_root / base_image_name
+    base_candidates = [
+        assets_root / f"{asset_prefix}base_{scene_id}.png",
+        assets_root / f"{asset_prefix}base_{scene_id}.jpg",
+    ]
 
-    if not base_path.exists():
-        raise FileNotFoundError(f"Imagem base não encontrada: {base_path}")
+    base_path = next((p for p in base_candidates if p.exists()), None)
 
-    # base em NumPy float
+    if not base_path:
+        searched = [str(p) for p in base_candidates]
+
+        msg = (
+            "❌ Base 2D não encontrada\n"
+            f"• Scene: {scene_id}\n"
+            f"• Asset prefix: '{asset_prefix or '(none)'}'\n"
+            "• Arquivos esperados:\n"
+            + "\n".join(f"  - {p}" for p in searched) + "\n"
+            "👉 Ação: crie um dos arquivos acima no diretório da cena."
+        )
+
+        raise FileNotFoundError(msg)
+
+
     result = _load_rgb_np(base_path)
 
     missing_assets = []
@@ -200,8 +216,9 @@ def stack_layers_image_only(
         if not material_file or not mask_file:
             continue
 
-        material_path = assets_root / "materials" / material_file
-        mask_path = assets_root / "masks" / mask_file
+        material_path = assets_root / "materials" / \
+            f"{asset_prefix}{material_file}"
+        mask_path = assets_root / "masks" / f"{asset_prefix}{mask_file}"
 
         if not material_path.exists() or not mask_path.exists():
             missing_assets.append((layer_id, material_file, mask_file))
@@ -211,6 +228,8 @@ def stack_layers_image_only(
         mask = _load_mask_np(mask_path)
 
         result = _composite_np(result, material, mask)
+
+        logging.info(f"🎨 Layer {asset_prefix}{layer_id} → {item_id}")
 
     if missing_assets:
         logging.warning(f"⚠️ Assets ausentes (ignorados): {missing_assets}")

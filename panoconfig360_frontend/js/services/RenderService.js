@@ -22,4 +22,25 @@ export class RenderService {
 
     return await response.json();
   }
+
+  async render2D(clientId, sceneId, selection) {
+    const response = await fetch("/api/render2d", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        client: clientId,
+        scene: sceneId,
+        selection: selection,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || "Erro no render 2D");
+    }
+
+    return await response.json();
+  }
 }
