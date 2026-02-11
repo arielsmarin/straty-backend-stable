@@ -1,0 +1,19 @@
+[
+  { "index": 0, "id": "acqua-luise", "label": "Acqua Luise", "thumbnail": "css/thumbs/thumb_acqua-luise.jpg" },
+  { "index": 1, "id": "amazonita", "label": "Amazonita", "thumbnail": "css/thumbs/thumb_amazonita.jpg" },
+  { "index": 2, "id": "antartida", "label": "Antartida", "thumbnail": "css/thumbs/thumb_antartida.jpg" },
+  { "index": 3, "id": "baccarat", "label": "Baccarat", "thumbnail": "css/thumbs/thumb_baccarat.jpg" },
+  { "index": 4, "id": "bianco-neva", "label": "Bianco Neva", "thumbnail": "css/thumbs/thumb_bianco-neva.jpg" },
+  { "index": 5, "id": "blue-deep", "label": "Blue Deep", "thumbnail": "css/thumbs/thumb_blue-deep.jpg" },
+  { "index": 6, "id": "chantilly", "label": "Chantilly", "thumbnail": "css/thumbs/thumb_chantilly.jpg" },
+  { "index": 7, "id": "cristallo-rose", "label": "Cristallo Rosé", "thumbnail": "css/thumbs/thumb_cristallo-rose.jpg" },
+  { "index": 8, "id": "diamond-black", "label": "Diamond Black", "thumbnail": "css/thumbs/thumb_diamond-black.jpg" },
+  { "index": 9, "id": "everglades", "label": "Everglades", "thumbnail": "css/thumbs/thumb_everglades.jpg" },
+  { "index": 10, "id": "le-blanc", "label": "Le Blanc", "thumbnail": "css/thumbs/thumb_le-blanc.jpg" },
+  { "index": 11, "id": "matterhorn", "label": "Matterhorn", "thumbnail": "css/thumbs/thumb_matterhorn.jpg" },
+  { "index": 12, "id": "naica", "label": "Naica", "thumbnail": "css/thumbs/thumb_naica.jpg" },
+  { "index": 13, "id": "original-luise-blue", "label": "Original Luise Blue", "thumbnail": "css/thumbs/thumb_original-luise-blue.jpg" },
+  { "index": 14, "id": "perla-venata", "label": "Perla Venata", "thumbnail": "css/thumbs/thumb_perla-venata.jpg" },
+  { "index": 15, "id": "royal-luise-blue", "label": "Royal Luise Blue", "thumbnail": "css/thumbs/thumb_royal-luise-blue.jpg" },
+  { "index": 16, "id": "zumaya", "label": "Zumaya", "thumbnail": "css/thumbs/thumb_zumaya.jpg" }
+]
