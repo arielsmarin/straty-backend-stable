@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panoconfig360 CRUD Dinâmico</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>CRUD Dinâmico de Configuração</h1>
+    <p>Fluxo: Cliente → Cena → Layer (3 a 4) → Materiais → JSON final.</p>
+
+    <section>
+      <h2>Tenant</h2>
+      <input id="tenant" placeholder="X-Tenant-ID" />
+    </section>
+
+    <section>
+      <h2>Novo Cliente</h2>
+      <form id="client-form">
+        <input name="tenant_key" placeholder="tenant_key" required />
+        <input name="nome" placeholder="nome" required />
+        <input name="email" placeholder="email" required />
+        <button type="submit">Criar cliente</button>
+      </form>
+      <pre id="clients"></pre>
+    </section>
+
+    <section>
+      <h2>Nova Cena</h2>
+      <form id="scene-form">
+        <input name="client_id" type="number" placeholder="client_id" required />
+        <input name="scene_key" placeholder="scene_key" required />
+        <input name="scene_index" type="number" placeholder="scene_index" required />
+        <input name="label" placeholder="label" required />
+        <input name="base_asset_path" placeholder="base_asset_path relativo" />
+        <button type="submit">Criar cena</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Novo Layer</h2>
+      <form id="layer-form">
+        <input name="scene_id" type="number" placeholder="scene_id" required />
+        <input name="layer_id" placeholder="layer_id ex: barbecue" required />
+        <input name="build_order" type="number" placeholder="build_order" required />
+        <input name="label" placeholder="label" required />
+        <input name="mask_path" placeholder="mask_path relativo" />
+        <button type="submit">Criar layer</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Novo Material</h2>
+      <form id="material-form">
+        <input name="layer_id" type="number" placeholder="layer_id" required />
+        <input name="material_id" placeholder="material_id" required />
+        <input name="item_index" type="number" placeholder="item_index" required />
+        <input name="label" placeholder="label" required />
+        <input name="file_path" placeholder="file_path relativo" required />
+        <input name="thumbnail" placeholder="thumbnail relativo" />
+        <button type="submit">Criar material</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Exportar JSON final</h2>
+      <form id="export-form">
+        <input name="client_id" type="number" placeholder="client_id" required />
+        <button type="submit">Exportar config</button>
+      </form>
+      <pre id="output"></pre>
+    </section>
+
+    <pre id="status"></pre>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
