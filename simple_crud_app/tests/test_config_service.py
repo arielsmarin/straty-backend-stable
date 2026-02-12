@@ -152,7 +152,7 @@ def test_full_flow_and_export():
 
     for idx, lid in enumerate(["barbecue", "countertop", "island"]):
         layer = run(service.create_layer(scene.id, schemas.LayerCreate(layer_id=lid, label=lid, build_order=idx, mask_path="m"), "t1"))
-        run(service.create_material(layer.id, schemas.MaterialCreate(material_id=f"mtl-{lid}", label=lid, item_index=idx, file_path="f"), "t1"))
+        run(service.create_material(layer.id, schemas.ItemCreate(material_id=f"mtl-{lid}", label=lid, item_index=idx, file_path="f"), "t1"))
 
     cfg = run(service.export_client_config(c.id, "t1"))
     assert cfg.client["tenant_key"] == "t1"

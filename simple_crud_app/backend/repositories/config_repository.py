@@ -33,12 +33,26 @@ class ConfigRepository:
 
     async def list_scenes(self, client_id: int) -> list[models.Scene]:
         result = await self.db.execute(
-            select(models.Scene).where(models.Scene.client_id == client_id).order_by(models.Scene.scene_index)
+            select(models.Scene).where(models.Scene.client_id ==
+                                       client_id).order_by(models.Scene.scene_index)
         )
         return list(result.scalars().all())
 
     async def get_scene(self, scene_id: int) -> models.Scene | None:
         return await self.db.get(models.Scene, scene_id)
+
+    async def get_scene_by_index(
+        self,
+        client_id: int,
+        scene_index: int
+    ) -> models.Scene | None:
+        result = await self.db.execute(
+            select(models.Scene).where(
+                models.Scene.client_id == client_id,
+                models.Scene.scene_index == scene_index
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def create_scene(self, scene: models.Scene) -> models.Scene:
         self.db.add(scene)
@@ -48,7 +62,8 @@ class ConfigRepository:
 
     async def list_layers(self, scene_id: int) -> list[models.Layer]:
         result = await self.db.execute(
-            select(models.Layer).where(models.Layer.scene_id == scene_id).order_by(models.Layer.build_order)
+            select(models.Layer).where(models.Layer.scene_id ==
+                                       scene_id).order_by(models.Layer.build_order)
         )
         return list(result.scalars().all())
 
@@ -58,17 +73,18 @@ class ConfigRepository:
         await self.db.refresh(layer)
         return layer
 
-    async def list_materials(self, layer_id: int) -> list[models.Material]:
+    async def list_items(self, layer_id: int) -> list[models.Item]:
         result = await self.db.execute(
-            select(models.Material).where(models.Material.layer_id == layer_id).order_by(models.Material.item_index)
+            select(models.Item).where(models.Item.layer_id ==
+                                      layer_id).order_by(models.Item.catalog_index)
         )
         return list(result.scalars().all())
 
-    async def create_material(self, material: models.Material) -> models.Material:
-        self.db.add(material)
+    async def create_item(self, item: models.Item) -> models.Item:
+        self.db.add(item)
         await self.db.commit()
-        await self.db.refresh(material)
-        return material
+        await self.db.refresh(item)
+        return item
 
     async def get_client_tree(self, client_id: int) -> models.Client | None:
         query = (
@@ -77,7 +93,7 @@ class ConfigRepository:
             .options(
                 selectinload(models.Client.scenes)
                 .selectinload(models.Scene.layers)
-                .selectinload(models.Layer.materials)
+                .selectinload(models.Layer.items)
             )
         )
         result = await self.db.execute(query)

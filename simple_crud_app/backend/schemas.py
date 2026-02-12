@@ -13,8 +13,8 @@ class ApiResponse(GenericModel, Generic[T]):
 
 
 class ClientBase(BaseModel):
-    tenant_key: str = Field(min_length=2, max_length=80)
-    nome: str = Field(min_length=2, max_length=120)
+    tenant_key: str = Field(min_length=1, max_length=80)
+    nome: str = Field(min_length=1, max_length=120)
     email: str
     ativo: bool = True
     asset_base_path: str = ""
@@ -26,7 +26,7 @@ class ClientCreate(ClientBase):
 
 
 class ClientUpdate(BaseModel):
-    nome: str = Field(min_length=2, max_length=120)
+    nome: str = Field(min_length=1, max_length=120)
     email: str
     ativo: bool = True
     asset_base_path: str = ""
@@ -39,11 +39,9 @@ class ClientResponse(ClientBase):
 
 
 class SceneBase(BaseModel):
-    scene_key: str = Field(min_length=2, max_length=80)
+    scene_id: str = Field(min_length=1, max_length=80)
     scene_index: int = Field(ge=0)
-    label: str = Field(min_length=2, max_length=120)
-    base_asset_path: str = ""
-    thumbnail: str = ""
+    label: str = Field(min_length=1, max_length=120)
 
 
 class SceneCreate(SceneBase):
@@ -57,10 +55,10 @@ class SceneResponse(SceneBase):
 
 
 class LayerBase(BaseModel):
-    layer_id: str = Field(min_length=2, max_length=80)
-    label: str = Field(min_length=2, max_length=120)
-    build_order: int = Field(ge=0)
-    mask_path: str = ""
+    layer_id: str
+    label: str
+    build_order: int
+    mask: str
 
 
 class LayerCreate(LayerBase):
@@ -74,29 +72,27 @@ class LayerResponse(LayerBase):
 
 
 class MaterialBase(BaseModel):
-    material_id: str = Field(min_length=2, max_length=80)
-    label: str = Field(min_length=2, max_length=120)
+    material_id: str = Field(min_length=1, max_length=80)
     item_index: int = Field(ge=0)
-    file_path: str = Field(min_length=1)
-    thumbnail: str = ""
 
 
-class MaterialCreate(MaterialBase):
-    pass
+class ItemCreate(BaseModel):
+    material_id: str
+    catalog_index: int
 
 
-class MaterialResponse(MaterialBase):
+class ItemResponse(MaterialBase):
     id: int
     layer_id: int
     model_config = ConfigDict(from_attributes=True)
 
 
-class MaterialConfigOutput(BaseModel):
+class ItemConfigOutput(BaseModel):
     index: int
     id: str
     label: str
     thumbnail: str
-    file: str
+    file: str | None
 
 
 class LayerConfigOutput(BaseModel):
@@ -104,7 +100,8 @@ class LayerConfigOutput(BaseModel):
     build_order: int
     label: str
     mask: str
-    items: list[MaterialConfigOutput]
+    items: list[ItemConfigOutput
+                ]
 
 
 class SceneConfigOutput(BaseModel):
@@ -114,8 +111,36 @@ class SceneConfigOutput(BaseModel):
     layers: list[LayerConfigOutput]
 
 
+class ClientInfo(BaseModel):
+    id: str
+    label: str
+
+
+class ProjectConfig(BaseModel):
+    configStringBase: int
+    buildChars: int
+    description: str
+
+
+class NamingConfig(BaseModel):
+    tilePattern: str
+    metadataPattern: str
+
+
+class ViewerConfig(BaseModel):
+    type: str
+    tileSize: int
+    cubeSize: int
+    defaultFov: float
+    camera_rotation_max: float
+    camera_rotation_min: float
+    limit_camera_rotation: int
+
+
 class FullConfigOutput(BaseModel):
-    schemaVersion: str = "1.0"
-    client: dict
+    schemaVersion: str = "2.0"
+    client: ClientInfo
+    project: ProjectConfig
+    naming: NamingConfig
+    viewer: ViewerConfig
     scenes: dict[str, SceneConfigOutput]
-    build: str

@@ -11,8 +11,8 @@ from ..schemas import (
     FullConfigOutput,
     LayerCreate,
     LayerResponse,
-    MaterialCreate,
-    MaterialResponse,
+    ItemCreate,
+    ItemResponse,
     SceneCreate,
     SceneResponse,
 )
@@ -29,7 +29,8 @@ def get_service(db: AsyncSession = Depends(get_db)) -> ConfigService:
 
 def _tenant_header(x_tenant_id: str | None = Header(default=None)) -> str:
     if not x_tenant_id:
-        raise HTTPException(status_code=400, detail={"status": "error", "data": None, "error": "header X-Tenant-ID é obrigatório"})
+        raise HTTPException(status_code=400, detail={
+                            "status": "error", "data": None, "error": "header X-Tenant-ID é obrigatório"})
     return x_tenant_id
 
 
@@ -40,7 +41,8 @@ def _handle_domain_error(exc: Exception) -> None:
         code = 403
     else:
         code = 400
-    raise HTTPException(status_code=code, detail={"status": "error", "data": None, "error": str(exc)})
+    raise HTTPException(status_code=code, detail={
+                        "status": "error", "data": None, "error": str(exc)})
 
 
 @router.get("/clients", response_model=ApiResponse[list[ClientResponse]])
@@ -111,7 +113,7 @@ async def create_layer(scene_id: int, payload: LayerCreate, tenant_key: str = De
     return ApiResponse(data=layer)
 
 
-@router.get("/layers/{layer_id}/materials", response_model=ApiResponse[list[MaterialResponse]])
+@router.get("/layers/{layer_id}/items", response_model=ApiResponse[list[ItemResponse]])
 async def list_materials(layer_id: int, tenant_key: str = Depends(_tenant_header), service: ConfigService = Depends(get_service)):
     try:
         materials = await service.list_materials(layer_id, tenant_key)
@@ -120,8 +122,8 @@ async def list_materials(layer_id: int, tenant_key: str = Depends(_tenant_header
     return ApiResponse(data=materials)
 
 
-@router.post("/layers/{layer_id}/materials", response_model=ApiResponse[MaterialResponse], status_code=status.HTTP_201_CREATED)
-async def create_material(layer_id: int, payload: MaterialCreate, tenant_key: str = Depends(_tenant_header), service: ConfigService = Depends(get_service)):
+@router.post("/layers/{layer_id}/items", response_model=ApiResponse[ItemResponse], status_code=status.HTTP_201_CREATED)
+async def create_material(layer_id: int, payload: ItemCreate, tenant_key: str = Depends(_tenant_header), service: ConfigService = Depends(get_service)):
     try:
         material = await service.create_material(layer_id, payload, tenant_key)
     except DomainError as exc:
@@ -142,5 +144,21 @@ async def export_config(client_id: int, tenant_key: str = Depends(_tenant_header
 async def validate_build(build: str, service: ConfigService = Depends(get_service)):
     valid = await service.validate_build(build)
     if not valid:
-        raise HTTPException(status_code=400, detail={"status": "error", "data": None, "error": "build inválida"})
+        raise HTTPException(status_code=400, detail={
+                            "status": "error", "data": None, "error": "build inválida"})
     return ApiResponse(data={"valid": True})
+
+
+@router.post("/clients/{client_id}/scenes/{scene_index}/layers", response_model=ApiResponse[LayerResponse], status_code=status.HTTP_201_CREATED)
+async def create_layer_by_index(
+    client_id: int,
+    scene_index: int,
+    payload: LayerCreate,
+    tenant_key: str = Depends(_tenant_header),
+    service: ConfigService = Depends(get_service),
+):
+    try:
+        layer = await service.create_layer_by_scene_index(client_id, scene_index, payload, tenant_key)
+    except DomainError as exc:
+        _handle_domain_error(exc)
+    return ApiResponse(data=layer)
