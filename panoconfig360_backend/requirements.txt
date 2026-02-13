@@ -1,3 +1,7 @@
+sqlalchemy
+aiosqlite
+pydantic
+httpx
 fastapi
 uvicorn
 pillow
