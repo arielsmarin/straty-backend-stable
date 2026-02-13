@@ -1,5 +1,4 @@
 fastapi
 uvicorn
-pillow
-numpy
+pyvips
 requests

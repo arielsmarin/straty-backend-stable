@@ -2,14 +2,19 @@ import os
 import json
 import logging
 from pathlib import Path
-from PIL import Image
-import numpy as np
+
+import pyvips
+
+from panoconfig360_backend.render.vips_compat import (
+    VipsImageCompat,
+    blend_with_mask,
+    ensure_rgb8,
+    load_rgb_image,
+    resize_to_match,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-# ======================================================
-# 🔧 CONSTANTES (INALTERADAS)
-# ======================================================
 CONFIG_STRING_BASE = 36
 FIXED_LAYERS = 5
 SCENE_CHARS = 2
@@ -28,10 +33,6 @@ def get_build_chars() -> int:
 def get_actual_base() -> int:
     return 36 if CONFIG_STRING_BASE == 336 else CONFIG_STRING_BASE
 
-
-# ======================================================
-# 📦 CONFIG LOADER (INALTERADO)
-# ======================================================
 
 def load_config(config_path):
     if isinstance(config_path, Path):
@@ -60,10 +61,6 @@ def load_config(config_path):
     naming = config.get("naming", {})
     return config, scenes, naming
 
-
-# ======================================================
-# 🔢 ENCODE / DECODE (INALTERADO)
-# ======================================================
 
 def base36_encode(num: int, width: int = 2) -> str:
     chars = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -102,10 +99,6 @@ def decode_index(s: str) -> int:
     return base36_decode(s)
 
 
-# ======================================================
-# 🔢 BUILD STRING (INALTERADO)
-# ======================================================
-
 def build_string_from_selection(layers: list, selection: dict) -> str:
     config = [encode_index(0)] * FIXED_LAYERS
 
@@ -123,7 +116,7 @@ def build_string_from_selection(layers: list, selection: dict) -> str:
 
         item = next(
             (it for it in layer.get("items", []) if it["id"] == selected_id),
-            None
+            None,
         )
 
         if not item:
@@ -135,40 +128,20 @@ def build_string_from_selection(layers: list, selection: dict) -> str:
     return "".join(config)
 
 
-# ======================================================
-# 🧠 UTIL DE COMPOSITE COM MASK
-# ======================================================
+def _load_mask(path: Path) -> pyvips.Image:
+    mask = pyvips.Image.new_from_file(str(path), access="sequential")
+    if mask.bands > 1:
+        mask = mask.colourspace("b-w")
+    return mask.cast("uchar")
 
-def _load_rgb_np(path: Path):
-    return np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255.0
-
-
-def _load_mask_np(path: Path):
-    m = np.asarray(Image.open(path).convert("L"), dtype=np.float32) / 255.0
-    return m[..., None]
-
-
-def _composite_np(base, material, mask):
-    return base * (1.0 - mask) + material * mask
-
-
-# ======================================================
-# 🧩 NOVO STACK COM MASKS (SUBSTITUI PNG OVERLAY)
-# ======================================================
 
 def stack_layers_image_only(
     scene_id: str,
     layers: list,
     selection: dict,
     assets_root: Path,
-    asset_prefix: str = "",   # "" (cubemap) | "2d_"
-) -> Image.Image:
-    """
-    Novo stack:
-    base + material full-frame * mask P&B por layer.
-    Mantém assinatura e retorno do método antigo.
-    """
-
+    asset_prefix: str = "",
+):
     base_candidates = [
         assets_root / f"{asset_prefix}base_{scene_id}.png",
         assets_root / f"{asset_prefix}base_{scene_id}.jpg",
@@ -178,21 +151,17 @@ def stack_layers_image_only(
 
     if not base_path:
         searched = [str(p) for p in base_candidates]
-
         msg = (
             "❌ Base 2D não encontrada\n"
             f"• Scene: {scene_id}\n"
             f"• Asset prefix: '{asset_prefix or '(none)'}'\n"
             "• Arquivos esperados:\n"
-            + "\n".join(f"  - {p}" for p in searched) + "\n"
-            "👉 Ação: crie um dos arquivos acima no diretório da cena."
+            + "\n".join(f"  - {p}" for p in searched)
+            + "\n👉 Ação: crie um dos arquivos acima no diretório da cena."
         )
-
         raise FileNotFoundError(msg)
 
-
-    result = _load_rgb_np(base_path)
-
+    result = load_rgb_image(base_path)
     missing_assets = []
 
     for layer in sorted(layers, key=lambda x: x.get("build_order", 0)):
@@ -202,11 +171,7 @@ def stack_layers_image_only(
         if not item_id:
             continue
 
-        item = next(
-            (it for it in layer.get("items", []) if it["id"] == item_id),
-            None
-        )
-
+        item = next((it for it in layer.get("items", []) if it["id"] == item_id), None)
         if not item:
             continue
 
@@ -216,24 +181,21 @@ def stack_layers_image_only(
         if not material_file or not mask_file:
             continue
 
-        material_path = assets_root / "materials" / \
-            f"{asset_prefix}{material_file}"
+        material_path = assets_root / "materials" / f"{asset_prefix}{material_file}"
         mask_path = assets_root / "masks" / f"{asset_prefix}{mask_file}"
 
         if not material_path.exists() or not mask_path.exists():
             missing_assets.append((layer_id, material_file, mask_file))
             continue
 
-        material = _load_rgb_np(material_path)
-        mask = _load_mask_np(mask_path)
+        material = resize_to_match(load_rgb_image(material_path), result.width, result.height)
+        mask = resize_to_match(_load_mask(mask_path), result.width, result.height)
 
-        result = _composite_np(result, material, mask)
-
+        result = blend_with_mask(result, material, mask)
         logging.info(f"🎨 Layer {asset_prefix}{layer_id} → {item_id}")
 
     if missing_assets:
         logging.warning(f"⚠️ Assets ausentes (ignorados): {missing_assets}")
 
     logging.info("✅ Stack com masks gerado")
-
-    return Image.fromarray((result * 255).astype("uint8"))
+    return VipsImageCompat(ensure_rgb8(result))
