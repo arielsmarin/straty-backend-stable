@@ -9,6 +9,10 @@ export const CAMERA_POIS = {
   table: { yaw: 0.03, pitch: 0.28 },
   barbecue: { yaw: 2.83, pitch: -0.022 },
   countertop: { yaw: -1.76, pitch: -0.05 },
+  wall_panel: { yaw: 1.5, pitch: 0.1 },
+  bed_panel: { yaw: 1.2, pitch: 0.3 },
+  base_bed: { yaw: 1.1, pitch: 0.4 },
+  floor: { yaw: 1, pitch: 0.75 },
 };
 
 export function CreateCameraController(view) {
@@ -62,8 +66,13 @@ export function CreateCameraController(view) {
     return Math.min(Math.max(fov, FOV_MIN), FOV_MAX);
   }
 
+  function normalizeId(id) {
+    return id?.toLowerCase().replace(/-/g, "_");
+  }
+
   function focusOn(key) {
-    const poi = CAMERA_POIS[key];
+    const poi = CAMERA_POIS[normalizeId(key)];
+    
     if (!poi) {
       console.warn(`[CameraController] POI "${key}" não encontrado.`);
       return;

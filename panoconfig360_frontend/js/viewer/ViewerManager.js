@@ -1,5 +1,6 @@
 import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
 import { TilePattern } from "../utils/TilePattern.js";
+import { enablePoiCapture } from "../utils/poiCapture.js";
 
 export class ViewerManager {
   constructor(containerId, viewerConfig = {}) {
@@ -69,6 +70,14 @@ export class ViewerManager {
       newScene.switchTo({ transitionDuration: 0 });
       this._currentScene = newScene;
       this._currentBuild = tiles.build;
+
+      // ✅ ATIVA CAPTURE NO MOMENTO CORRETO
+      if (this._viewerConfig.devPoiCapture && !this._disablePoiCapture) {
+        const container = document.getElementById(this._containerId);
+        this._disablePoiCapture = enablePoiCapture(this._view, container);
+        console.log("[POI Capture] ativado");
+      }
+
       return;
     }
 

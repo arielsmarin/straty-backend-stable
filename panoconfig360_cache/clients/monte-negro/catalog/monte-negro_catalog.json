@@ -2,7 +2,7 @@
   { "index": 0, "id": "acqua-luise", "label": "Acqua Luise", "thumbnail": "css/thumbs/thumb_acqua-luise.jpg", "file": "mtl_acqua-luise.png" },
   { "index": 1, "id": "amazonita", "label": "Amazonita", "thumbnail": "css/thumbs/thumb_amazonita.jpg", "file": "mtl_amazonita.png" },
   { "index": 2, "id": "antartida", "label": "Antartida", "thumbnail": "css/thumbs/thumb_antartida.jpg", "file": "mtl_antartida.png" },
-  { "index": 3, "id": "baccarat", "label": "Baccarat", "thumbnail": "css/thumbs/thumb_baccarat.jpg", "file": "baccarat.png" },
+  { "index": 3, "id": "baccarat", "label": "Baccarat", "thumbnail": "css/thumbs/thumb_baccarat.jpg", "file": "mtl_baccarat.png" },
   { "index": 4, "id": "bianco-neva", "label": "Bianco Neva", "thumbnail": "css/thumbs/thumb_bianco-neva.jpg", "file": "mtl_bianco-neva.png" },
   { "index": 5, "id": "blue-deep", "label": "Blue Deep", "thumbnail": "css/thumbs/thumb_blue-deep.jpg", "file": "mtl_blue-deep.png" },
   { "index": 6, "id": "chantilly", "label": "Chantilly", "thumbnail": "css/thumbs/thumb_chantilly.jpg", "file": "mtl_chantilly.png" },

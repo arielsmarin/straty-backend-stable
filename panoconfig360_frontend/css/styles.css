@@ -57,6 +57,13 @@ section {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+
+  pointer-events: none; /* container NÃO bloqueia o panorama */
+}
+
+/* só os elementos internos recebem clique */
+.ui-container * {
+  pointer-events: auto;
 }
 
 /* =========================
@@ -581,7 +588,7 @@ section {
 }
 
 .render-loading::after {
-  content: '';
+  content: "";
   display: block;
   width: 40px;
   height: 40px;
@@ -624,7 +631,7 @@ section {
   .render-preview-image {
     max-height: 50vh;
   }
-  
+
   .scene-toggle-btn {
     padding: 10px 12px;
     font-size: 12px;
