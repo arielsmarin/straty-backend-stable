@@ -129,7 +129,7 @@ def build_string_from_selection(layers: list, selection: dict) -> str:
 
 
 def _load_mask(path: Path) -> pyvips.Image:
-    mask = pyvips.Image.new_from_file(str(path), access="sequential")
+    mask = pyvips.Image.new_from_file(str(path), access="random")
     if mask.bands > 1:
         mask = mask.colourspace("b-w")
     return mask.cast("uchar")

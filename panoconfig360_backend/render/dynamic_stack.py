@@ -115,7 +115,8 @@ def build_string_from_selection(scene_index: int, layers: list, selection: dict)
         if not selected_id:
             continue
 
-        item = next((it for it in layer.get("items", []) if it["id"] == selected_id), None)
+        item = next((it for it in layer.get("items", [])
+                    if it["id"] == selected_id), None)
 
         if not item:
             continue
@@ -129,7 +130,7 @@ def build_string_from_selection(scene_index: int, layers: list, selection: dict)
 
 
 def _load_overlay_with_alpha(path: Path) -> pyvips.Image:
-    img = pyvips.Image.new_from_file(str(path), access="sequential")
+    img = pyvips.Image.new_from_file(str(path), access="random")
     if img.bands == 1:
         img = img.bandjoin([img, img]).bandjoin_const(255)
     elif img.bands == 2:
@@ -165,7 +166,8 @@ def stack_layers_image_only(
         if not item_id:
             continue
 
-        item = next((it for it in layer.get("items", []) if it["id"] == item_id), None)
+        item = next((it for it in layer.get("items", [])
+                    if it["id"] == item_id), None)
 
         if not item:
             continue
@@ -180,12 +182,14 @@ def stack_layers_image_only(
             missing_overlays.append((layer_id, file_name))
             continue
 
-        overlay = resize_to_match(_load_overlay_with_alpha(overlay_path), base.width, base.height)
+        overlay = resize_to_match(_load_overlay_with_alpha(
+            overlay_path), base.width, base.height)
         base_rgba = base.bandjoin_const(255)
         base = base_rgba.composite2(overlay, "over").extract_band(0, n=3)
 
     if missing_overlays:
-        logging.warning(f"⚠️ Overlays ausentes (ignorados): {missing_overlays}")
+        logging.warning(
+            f"⚠️ Overlays ausentes (ignorados): {missing_overlays}")
 
     logging.info(f"✅ Stack de imagem gerado: {(base.width, base.height)}")
     return VipsImageCompat(ensure_rgb8(base))

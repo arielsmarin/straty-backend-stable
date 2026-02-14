@@ -46,15 +46,16 @@ def split_faces_from_image(cubemap_img, output_base_dir: str, tile_size: int, le
         face_img = cubemap_img.extract_area(left, 0, face_size, face_size)
 
         if face_key == "py":
-            face_img = face_img.rot90()
+            face_img = face_img.rot270()
             marzipano_face = MARZIPANO_FACE_MAP["ny"]
         elif face_key == "ny":
-            face_img = face_img.rot270()
+            face_img = face_img.rot90()
             marzipano_face = MARZIPANO_FACE_MAP["py"]
         else:
             marzipano_face = MARZIPANO_FACE_MAP[face_key]
 
-        _generate_tiles(face_img, output_base_dir, marzipano_face, tile_size, level, build)
+        _generate_tiles(face_img, output_base_dir,
+                        marzipano_face, tile_size, level, build)
 
 
 def _generate_tiles(face_img: pyvips.Image, out_dir: str, face: str, tile_size: int, lod: int, build: str):
@@ -65,7 +66,7 @@ def _generate_tiles(face_img: pyvips.Image, out_dir: str, face: str, tile_size: 
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         dz_prefix = str(Path(tmp_dir) / "face")
-        ensure_rgb8(face_img).dzsave(
+        ensure_rgb8(face_img).copy().dzsave(
             dz_prefix,
             tile_size=tile_size,
             overlap=0,
@@ -84,4 +85,5 @@ def _generate_tiles(face_img: pyvips.Image, out_dir: str, face: str, tile_size: 
 
 def process_cubemap(input_image, output_base_dir: Path | str, tile_size=512, level=0, build: str = "unknown"):
     cubemap_img = normalize_to_horizontal_cubemap(input_image)
-    split_faces_from_image(cubemap_img, output_base_dir, tile_size, level, build)
+    split_faces_from_image(cubemap_img, output_base_dir,
+                           tile_size, level, build)

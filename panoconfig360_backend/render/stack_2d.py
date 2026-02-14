@@ -16,7 +16,7 @@ def render_stack_2d(base_image_path, layers, output_path):
         if not os.path.exists(path):
             continue
 
-        overlay = pyvips.Image.new_from_file(path, access="sequential")
+        overlay = pyvips.Image.new_from_file(path, access="random")
         if overlay.bands == 1:
             overlay = overlay.bandjoin([overlay, overlay]).bandjoin_const(255)
         elif overlay.bands == 2:

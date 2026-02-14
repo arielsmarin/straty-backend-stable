@@ -20,7 +20,7 @@ class VipsImageCompat:
 
 
 def load_rgb_image(path: str | Path) -> pyvips.Image:
-    img = pyvips.Image.new_from_file(str(path), access="sequential")
+    img = pyvips.Image.new_from_file(str(path), access="random")
     if img.bands == 1:
         img = img.bandjoin([img, img])
     elif img.bands >= 3:
