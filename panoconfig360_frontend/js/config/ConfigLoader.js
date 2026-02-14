@@ -129,7 +129,7 @@ export class ConfigLoader {
   getViewerConfig() {
     return this._config?.viewer || {
       tileSize: 512,
-      cubeSize: 1024,
+      cubeSize: 2048,
       defaultFov: Math.PI / 2
     };
   }
