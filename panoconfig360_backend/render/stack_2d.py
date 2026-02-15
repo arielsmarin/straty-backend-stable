@@ -31,4 +31,4 @@ def render_stack_2d(base_image_path, layers, output_path):
         overlay = resize_to_match(overlay.cast("uchar"), base.width, base.height)
         base = base.bandjoin_const(255).composite2(overlay, "over").extract_band(0, n=3)
 
-    ensure_rgb8(base).write_to_file(f"{output_path}[Q=95]")
+    ensure_rgb8(base).write_to_file(f"{output_path}[Q=80]")

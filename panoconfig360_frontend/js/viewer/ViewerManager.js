@@ -37,10 +37,12 @@ export class ViewerManager {
       fov: this._viewerConfig.defaultFov || Math.PI / 2,
     });
 
-    // const { tileSize = 512, cubeSize = 2048 } = this._viewerConfig;
+    // const { tileSize = 512, cubeSize = 1024 } = this._viewerConfig;
 
     this._geometry = new Marzipano.CubeGeometry([
-      { tileSize: 1024, size: 2048 },
+      { tileSize: 512, size: 512, fallbackOnly: true },
+      { tileSize: 512, size: 1024 },
+      { tileSize: 512, size: 2048 },
     ]);
 
     this._cameraController = CreateCameraController(this._view);

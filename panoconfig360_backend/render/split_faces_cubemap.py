@@ -71,7 +71,7 @@ def _generate_tiles(face_img: pyvips.Image, out_dir: str, face: str, tile_size: 
             tile_size=tile_size,
             overlap=0,
             depth="one",
-            suffix=".jpg[Q=95]",
+            suffix=".jpg[Q=80]",
             container="fs",
         )
 
@@ -83,7 +83,115 @@ def _generate_tiles(face_img: pyvips.Image, out_dir: str, face: str, tile_size: 
             shutil.move(str(tile), os.path.join(out_dir, filename))
 
 
-def process_cubemap(input_image, output_base_dir: Path | str, tile_size=512, level=0, build: str = "unknown"):
+def process_cubemap(
+    input_image,
+    output_base_dir,
+    tile_size=512,
+    build="unknown"
+):
+    output_base_dir = Path(output_base_dir)
+    output_base_dir.mkdir(parents=True, exist_ok=True)
+
     cubemap_img = normalize_to_horizontal_cubemap(input_image)
-    split_faces_from_image(cubemap_img, output_base_dir,
-                           tile_size, level, build)
+    cubemap_img = ensure_rgb8(cubemap_img)
+
+    face_size = cubemap_img.height
+
+    if cubemap_img.width != face_size * 6:
+        raise ValueError("Cubemap horizontal inválido")
+
+    # LODs EXATOS esperados pelo frontend
+    lod_sizes = []
+    size = tile_size
+    while size <= face_size:
+        lod_sizes.append(size)
+        size *= 2
+
+    # Extrair faces uma única vez
+    faces = []
+
+    for i, face_key in enumerate(STRIP_FACES):
+        left = i * face_size
+        face_img = cubemap_img.extract_area(left, 0, face_size, face_size)
+
+        if face_key == "py":
+            face_img = face_img.rot270()
+            marzipano_face = MARZIPANO_FACE_MAP["ny"]
+        elif face_key == "ny":
+            face_img = face_img.rot90()
+            marzipano_face = MARZIPANO_FACE_MAP["py"]
+        else:
+            marzipano_face = MARZIPANO_FACE_MAP[face_key]
+
+        faces.append((face_img, marzipano_face))
+
+    # Gerar LOD controlado
+    for lod, target_size in enumerate(lod_sizes):
+
+        scale = target_size / face_size
+
+        for face_img, marzipano_face in faces:
+
+            resized = face_img.resize(scale)
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+
+                dz_prefix = str(Path(tmp_dir) / "face")
+
+                resized.dzsave(
+                    dz_prefix,
+                    tile_size=tile_size,
+                    overlap=0,
+                    depth="one",
+                    suffix=".jpg[Q=80]",
+                    container="fs",
+                )
+
+                tiles_root = Path(f"{dz_prefix}_files") / "0"
+
+                for tile in tiles_root.glob("*.jpg"):
+                    stem = tile.stem
+                    x_str, y_str = stem.split("_")
+
+                    filename = (
+                        f"{build}_{marzipano_face}_"
+                        f"{lod}_{x_str}_{y_str}.jpg"
+                    )
+
+                    shutil.move(
+                        str(tile),
+                        str(output_base_dir / filename)
+                    )
+
+
+""" def process_cubemap(
+    input_image,
+    output_base_dir: Path | str,
+    tile_size: int = 512,
+    build: str = "unknown"
+):
+    cubemap_img = normalize_to_horizontal_cubemap(input_image)
+
+    face_size = cubemap_img.height
+
+    if cubemap_img.width != face_size * 6:
+        raise ValueError("Cubemap horizontal inválido")
+
+    current_size = tile_size
+    lod = 0
+
+    while current_size <= face_size:
+        scale = current_size / face_size
+
+        resized = cubemap_img.resize(scale)
+
+        split_faces_from_image(
+            resized,
+            output_base_dir,
+            tile_size,
+            lod,
+            build
+        )
+
+        current_size *= 2
+        lod += 1 """

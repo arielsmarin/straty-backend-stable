@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from pathlib import Path
+from panoconfig360_backend.render.vips_compat import resolve_asset
 
 import pyvips
 
@@ -143,23 +144,22 @@ def stack_layers_image_only(
     asset_prefix: str = "",
 ):
     base_candidates = [
-        assets_root / f"{asset_prefix}base_{scene_id}.png",
         assets_root / f"{asset_prefix}base_{scene_id}.jpg",
+        assets_root / f"{asset_prefix}base_{scene_id}.png",
     ]
 
-    base_path = next((p for p in base_candidates if p.exists()), None)
+    base_base = assets_root / f"{asset_prefix}base_{scene_id}"
 
-    if not base_path:
-        searched = [str(p) for p in base_candidates]
-        msg = (
+    try:
+        base_path = resolve_asset(base_base)
+    except FileNotFoundError:
+        raise FileNotFoundError(
             "❌ Base 2D não encontrada\n"
             f"• Scene: {scene_id}\n"
             f"• Asset prefix: '{asset_prefix or '(none)'}'\n"
-            "• Arquivos esperados:\n"
-            + "\n".join(f"  - {p}" for p in searched)
-            + "\n👉 Ação: crie um dos arquivos acima no diretório da cena."
+            f"• Base esperada: {base_base}.(png|jpg|jpeg)\n"
+            "👉 Ação: crie o arquivo base com extensão suportada."
         )
-        raise FileNotFoundError(msg)
 
     result = load_rgb_image(base_path)
     missing_assets = []
@@ -171,7 +171,11 @@ def stack_layers_image_only(
         if not item_id:
             continue
 
-        item = next((it for it in layer.get("items", []) if it["id"] == item_id), None)
+        item = next(
+            (it for it in layer.get("items", []) if it["id"] == item_id),
+            None,
+        )
+
         if not item:
             continue
 
@@ -181,15 +185,28 @@ def stack_layers_image_only(
         if not material_file or not mask_file:
             continue
 
-        material_path = assets_root / "materials" / f"{asset_prefix}{material_file}"
-        mask_path = assets_root / "masks" / f"{asset_prefix}{mask_file}"
+        material_base = assets_root / "materials" / \
+            f"{asset_prefix}{material_file}"
+        mask_base = assets_root / "masks" / f"{asset_prefix}{mask_file}"
 
-        if not material_path.exists() or not mask_path.exists():
+        try:
+            material_path = resolve_asset(material_base)
+            mask_path = resolve_asset(mask_base)
+        except FileNotFoundError:
             missing_assets.append((layer_id, material_file, mask_file))
             continue
 
-        material = resize_to_match(load_rgb_image(material_path), result.width, result.height)
-        mask = resize_to_match(_load_mask(mask_path), result.width, result.height)
+        material = resize_to_match(
+            load_rgb_image(material_path),
+            result.width,
+            result.height,
+        )
+
+        mask = resize_to_match(
+            _load_mask(mask_path),
+            result.width,
+            result.height,
+        )
 
         result = blend_with_mask(result, material, mask)
         logging.info(f"🎨 Layer {asset_prefix}{layer_id} → {item_id}")

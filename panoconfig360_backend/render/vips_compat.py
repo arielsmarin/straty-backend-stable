@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pyvips
 
+SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 class VipsImageCompat:
     def __init__(self, image: pyvips.Image):
@@ -13,10 +14,19 @@ class VipsImageCompat:
     def size(self) -> tuple[int, int]:
         return self.image.width, self.image.height
 
-    def save(self, output_path: str | Path, _format: str = "JPEG", quality: int = 95, subsampling: int = 0) -> None:
+    def save(self, output_path: str | Path, _format: str = "JPEG", quality: int = 80, subsampling: int = 0) -> None:
         _ = subsampling
         path = str(output_path)
         self.image.write_to_file(f"{path}[Q={quality}]")
+
+
+def resolve_asset(base_path: Path) -> Path:
+    for ext in SUPPORTED_EXTENSIONS:
+        candidate = base_path.with_suffix(ext)
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(f"Asset não encontrado para base: {base_path}")
 
 
 def load_rgb_image(path: str | Path) -> pyvips.Image:

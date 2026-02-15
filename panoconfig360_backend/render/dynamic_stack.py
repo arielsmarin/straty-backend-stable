@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from pathlib import Path
-
+from panoconfig360_backend.render.vips_compat import resolve_asset
 import pyvips
 
 from panoconfig360_backend.render.vips_compat import (
@@ -175,8 +175,9 @@ def stack_layers_image_only(
         if item.get("file") is None:
             continue
 
-        file_name = f"{layer_id}_{item_id}.png"
-        overlay_path = assets_root / "layers" / layer_id / file_name
+        file_name = f"{layer_id}_{item_id}"
+        overlay_base = assets_root / "layers" / layer_id / file_name
+        overlay_path = resolve_asset(overlay_base)
 
         if not overlay_path.exists():
             missing_overlays.append((layer_id, file_name))
