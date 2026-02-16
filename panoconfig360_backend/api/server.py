@@ -7,7 +7,7 @@ import time
 import tempfile
 import threading
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request, Body
+from fastapi import FastAPI, HTTPException, Request, Body, BackgroundTasks
 from panoconfig360_backend.render.dynamic_stack import (
     load_config,
     build_string_from_selection,
@@ -45,6 +45,103 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 last_request_time = 0.0
 lock = threading.Lock()
 MIN_INTERVAL = 1.0
+render_locks: dict[str, threading.Lock] = {}
+render_locks_guard = threading.Lock()
+active_background_renders: set[str] = set()
+active_background_guard = threading.Lock()
+
+
+def _get_render_lock(render_key: str) -> threading.Lock:
+    with render_locks_guard:
+        if render_key not in render_locks:
+            render_locks[render_key] = threading.Lock()
+        return render_locks[render_key]
+
+
+def _upload_jpg_tiles(tmp_dir: str, tile_root: str) -> int:
+    uploaded_count = 0
+
+    for filename in os.listdir(tmp_dir):
+        if not filename.lower().endswith(".jpg"):
+            continue
+
+        file_path = os.path.join(tmp_dir, filename)
+        key = f"{tile_root}/{filename}"
+        upload_file(file_path, key, "image/jpeg")
+        uploaded_count += 1
+
+    return uploaded_count
+
+
+def _write_metadata_file(metadata_payload: dict, tmp_dir: str) -> str:
+    meta_path = os.path.join(tmp_dir, "metadata.json")
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(metadata_payload, f)
+    return meta_path
+
+
+def _render_remaining_lods(
+    client_id: str,
+    scene_id: str,
+    selection: dict,
+    build_str: str,
+    tile_root: str,
+    metadata_key: str,
+):
+    render_key = f"{client_id}:{scene_id}:{build_str}"
+
+    try:
+        start = time.monotonic()
+        logging.info("🧵 Background LOD render iniciado para %s", render_key)
+
+        project, _ = load_client_config(client_id)
+        ctx = resolve_scene_context(project, scene_id)
+
+        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_bg_")
+        try:
+            stack_img = stack_layers_image_only(
+                scene_id=scene_id,
+                layers=ctx["layers"],
+                selection=selection,
+                assets_root=ctx["assets_root"],
+            )
+
+            process_cubemap(
+                stack_img,
+                tmp_dir,
+                tile_size=512,
+                build=build_str,
+                min_lod=1,
+            )
+            del stack_img
+
+            uploaded_count = _upload_jpg_tiles(tmp_dir, tile_root)
+            metadata_payload = {
+                "client": client_id,
+                "scene": scene_id,
+                "build": build_str,
+                "tileRoot": tile_root,
+                "generated_at": int(time.time()),
+                "status": "ready",
+                "last_stage": "background_lods_done",
+                "background_tiles_count": uploaded_count,
+            }
+            meta_path = _write_metadata_file(metadata_payload, tmp_dir)
+            upload_file(meta_path, metadata_key, "application/json")
+            logging.info(
+                "✅ Background LOD render finalizado para %s com %s tiles.",
+                render_key,
+                uploaded_count,
+            )
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+    except Exception:
+        logging.exception("❌ Falha na geração de LODs em background para %s", render_key)
+    finally:
+        with active_background_guard:
+            active_background_renders.discard(render_key)
+        elapsed = time.monotonic() - start
+        logging.info("⏱️ Background LOD render de %s terminou em %.2fs", render_key, elapsed)
 
 
 def load_client_config(client_id: str):
@@ -81,6 +178,7 @@ app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
 @app.post("/api/render", response_model=None)
 def render_cubemap(
+    background_tasks: BackgroundTasks,
     payload: dict = Body(...),
     request: Request = None
 ):
@@ -150,6 +248,7 @@ def render_cubemap(
     # ======================================================
     tile_root = f"clients/{client_id}/cubemap/{scene_id}/tiles/{build_str}"
     metadata_key = f"{tile_root}/metadata.json"
+    render_key = f"{client_id}:{scene_id}:{build_str}"
 
     cache_exists = exists(metadata_key)
     logging.info(f"🔍 Cache check: {metadata_key} → exists={cache_exists}")
@@ -171,98 +270,96 @@ def render_cubemap(
         }
 
     # ======================================================
-    # 🏗️ PROCESSA IMAGEM (SÓ SE NÃO TEM CACHE)
+    # 🏗️ PROCESSA IMAGEM (SÓ SE NÃO TEM CACHE) - FASE 1 (LOD 0)
     # ======================================================
-    logging.info("🏗️ Cache miss — iniciando processamento...")
+    render_lock = _get_render_lock(render_key)
+    with render_lock:
+        if exists(metadata_key):
+            tiles = {
+                "baseUrl": "/panoconfig360_cache",
+                "tileRoot": tile_root,
+                "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
+                "build": build_str,
+            }
+            return {
+                "status": "cached",
+                "build": build_str,
+                "tiles": tiles,
+            }
 
-    start = time.monotonic()
-    tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_")
-    logging.info(f"📁 Temp dir: {tmp_dir}")
+        logging.info("🏗️ Cache miss — iniciando processamento LOD0 para %s", render_key)
+        start = time.monotonic()
+        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod0_")
+        logging.info(f"📁 Temp dir: {tmp_dir}")
 
-    try:
-        # Gera stack de imagem
-        stack_img = stack_layers_image_only(
-            scene_id=scene_id,
-            layers=scene_layers,
-            selection=selection,
-            assets_root=assets_root
-        )
+        try:
+            stack_img = stack_layers_image_only(
+                scene_id=scene_id,
+                layers=scene_layers,
+                selection=selection,
+                assets_root=assets_root,
+            )
 
-        # Gera tiles
-        logging.info("🧩 Gerando tiles...")
+            process_cubemap(
+                stack_img,
+                tmp_dir,
+                tile_size=512,
+                build=build_str,
+                max_lod=0,
+            )
+            del stack_img
 
-        process_cubemap(
-            stack_img,
-            tmp_dir,
-            tile_size=512,
-            build=build_str
-        )
-
-        del stack_img
-        logging.info("🧹 Memória liberada.")
-
-        # ======================================================
-        # 📤 UPLOAD TILES
-        # ======================================================
-        uploaded_count = 0
-
-        for filename in os.listdir(tmp_dir):
-            if not filename.lower().endswith(".jpg"):
-                continue
-
-            file_path = os.path.join(tmp_dir, filename)
-            key = f"{tile_root}/{filename}"
-            upload_file(file_path, key, "image/jpeg")
-            uploaded_count += 1
-
-        logging.info(f"📤 {uploaded_count} tiles salvos.")
-
-        # ======================================================
-        # 🧾 METADATA
-        # ======================================================
-        if uploaded_count > 0:
-            meta = {
+            lod0_uploaded = _upload_jpg_tiles(tmp_dir, tile_root)
+            metadata_payload = {
                 "client": client_id,
                 "scene": scene_id,
                 "build": build_str,
                 "tileRoot": tile_root,
-                "tiles_count": uploaded_count,
                 "generated_at": int(time.time()),
-                "status": "ready",
+                "status": "processing",
+                "last_stage": "lod0_ready",
+                "lod0_tiles_count": lod0_uploaded,
             }
-
-            meta_path = os.path.join(tmp_dir, "metadata.json")
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f)
-
+            meta_path = _write_metadata_file(metadata_payload, tmp_dir)
             upload_file(meta_path, metadata_key, "application/json")
-            logging.info(f"📝 Metadata salvo: {metadata_key}")
 
-        elapsed = time.monotonic() - start
-        logging.info(f"✅ Render completo em {elapsed:.2f}s")
+            elapsed = time.monotonic() - start
+            logging.info("✅ LOD0 pronto para %s em %.2fs (%s tiles)", render_key, elapsed, lod0_uploaded)
+        except Exception as e:
+            logging.exception("❌ Erro no render LOD0")
+            raise HTTPException(500, f"Erro interno: {e}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            logging.info(f"🧹 Temp removido: {tmp_dir}")
 
-        tiles = {
-            "baseUrl": "/panoconfig360_cache",
-            "tileRoot": tile_root,
-            "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
-            "build": build_str,
-        }
+    with active_background_guard:
+        if render_key not in active_background_renders:
+            background_tasks.add_task(
+                _render_remaining_lods,
+                client_id,
+                scene_id,
+                selection,
+                build_str,
+                tile_root,
+                metadata_key,
+            )
+            active_background_renders.add(render_key)
+            logging.info("🧵 Background task agendada para LODs > 0 (%s)", render_key)
 
-        return {
-            "status": "generated",
-            "client": client_id,
-            "scene": scene_id,
-            "build": build_str,
-            "tiles": tiles,
-        }
+    tiles = {
+        "baseUrl": "/panoconfig360_cache",
+        "tileRoot": tile_root,
+        "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
+        "build": build_str,
+    }
 
-    except Exception as e:
-        logging.exception("❌ Erro no render")
-        raise HTTPException(500, f"Erro interno: {e}")
-
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        logging.info(f"🧹 Temp removido: {tmp_dir}")
+    return {
+        "status": "generated",
+        "client": client_id,
+        "scene": scene_id,
+        "build": build_str,
+        "tiles": tiles,
+    }
 
 
 # RENDER 2D SIMPLES (SEM CACHE DE TILES, APENAS IMAGEM FINAL)

@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import pyvips
 
@@ -87,7 +88,9 @@ def process_cubemap(
     input_image,
     output_base_dir,
     tile_size=512,
-    build="unknown"
+    build="unknown",
+    max_lod: Optional[int] = None,
+    min_lod: int = 0,
 ):
     output_base_dir = Path(output_base_dir)
     output_base_dir.mkdir(parents=True, exist_ok=True)
@@ -106,6 +109,18 @@ def process_cubemap(
     while size <= face_size:
         lod_sizes.append(size)
         size *= 2
+
+    if not lod_sizes:
+        raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
+
+    if min_lod < 0:
+        raise ValueError("min_lod deve ser >= 0")
+
+    final_lod = len(lod_sizes) - 1 if max_lod is None else max_lod
+    if final_lod < min_lod:
+        return
+
+    final_lod = min(final_lod, len(lod_sizes) - 1)
 
     # Extrair faces uma única vez
     faces = []
@@ -127,6 +142,8 @@ def process_cubemap(
 
     # Gerar LOD controlado
     for lod, target_size in enumerate(lod_sizes):
+        if lod < min_lod or lod > final_lod:
+            continue
 
         scale = target_size / face_size
 
