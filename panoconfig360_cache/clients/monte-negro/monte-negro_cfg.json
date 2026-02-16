@@ -16,7 +16,7 @@
       "label": "Kitchen",
       "layers": [
         {
-          "id": "backsplash",
+          "id": "kitchen-backsplash",
           "build_order": 0,
           "label": "Backsplash",
           "mask": "layer_kitchen_backsplash_mask",
@@ -80,7 +80,7 @@
           ]
         },
         {
-          "id": "island",
+          "id": "kitchen-island",
           "build_order": 1,
           "label": "Ilha",
           "mask": "layer_kitchen_island_mask",
@@ -144,7 +144,7 @@
           ]
         },
         {
-          "id": "countertop",
+          "id": "kitchen-countertop",
           "build_order": 2,
           "label": "Bancada",
           "mask": "layer_kitchen_countertop_mask",
@@ -215,7 +215,7 @@
       "label": "Gourmet",
       "layers": [
         {
-          "id": "barbecue",
+          "id": "gourmet-barbecue",
           "build_order": 0,
           "label": "Churrasqueira",
           "mask": "layer_gourmet_barbecue_mask",
@@ -273,7 +273,7 @@
           ]
         },
         {
-          "id": "island",
+          "id": "gourmet-island",
           "build_order": 1,
           "label": "Ilha",
           "mask": "layer_gourmet_island_mask",
@@ -330,7 +330,7 @@
           ]
         },
         {
-          "id": "countertop",
+          "id": "gourmet-countertop",
           "build_order": 2,
           "label": "Bancada",
           "mask": "layer_gourmet_countertop_mask",
@@ -394,7 +394,7 @@
       "label": "Bathroom",
       "layers": [
         {
-          "id": "countertop",
+          "id": "bath-countertop",
           "build_order": 0,
           "label": "Countertop",
           "mask": "layer_bathroom_countertop_mask",
@@ -634,7 +634,7 @@
           ]
         },
         {
-          "id": "floor",
+          "id": "bath-floor",
           "build_order": 2,
           "label": "Floor",
           "mask": "layer_bathroom_floor_mask",
