@@ -1,6 +1,6 @@
 import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
 import { TilePattern } from "../utils/TilePattern.js";
-import { enablePoiCapture } from "../utils/poiCapture.js";
+import { enablePOVCapture } from "../utils/POVCapture.js";
 
 export class ViewerManager {
   constructor(containerId, viewerConfig = {}) {
@@ -12,12 +12,20 @@ export class ViewerManager {
     this._cameraController = null;
     this._currentScene = null;
     this._currentBuild = null;
+
+    // listeners
+    this._resizeBound = null;
+    this._resizeScheduled = false;
+    this._uiElement = null;
   }
 
   initialize() {
     const container = document.getElementById(this._containerId);
     if (!container)
       throw new Error(`Container não encontrado: ${this._containerId}`);
+
+    this._container = container;
+    this._uiElement = document.querySelector(".ui-container") || null;
 
     if (typeof Marzipano === "undefined") {
       throw new Error("Marzipano não carregado");
@@ -27,21 +35,47 @@ export class ViewerManager {
       controls: { mouseViewMode: "drag" },
     });
 
+    // garante cálculo correto após layout flex
+    requestAnimationFrame(() => {
+      this._viewer?.updateSize();
+    });
+
     const savedPoi = localStorage.getItem("pano-camera-poi") || "island";
     const initialPoi = CAMERA_POIS[savedPoi] ||
       CAMERA_POIS.island || { yaw: 0, pitch: 0 };
 
+    const savedState = JSON.parse(
+      localStorage.getItem("pano-camera-state") || "null",
+    );
+
     this._view = new Marzipano.RectilinearView({
-      yaw: initialPoi.yaw,
-      pitch: initialPoi.pitch,
-      fov: this._viewerConfig.defaultFov || Math.PI / 2,
+      yaw: savedState?.yaw ?? initialPoi.yaw,
+      pitch: savedState?.pitch ?? initialPoi.pitch,
+      fov: savedState?.fov ?? this._viewerConfig.defaultFov ?? Math.PI / 2,
     });
 
-    const { tileSize = 512, cubeSize = 1024 } = this._viewerConfig;
-
-    this._geometry = new Marzipano.CubeGeometry([{ size: cubeSize, tileSize }]);
+    this._geometry = new Marzipano.CubeGeometry([
+      { tileSize: 512, size: 512, fallbackOnly: true },
+      { tileSize: 512, size: 1024 },
+      { tileSize: 512, size: 2048 },
+    ]);
 
     this._cameraController = CreateCameraController(this._view);
+
+    // resize seguro — apenas recalcula tamanho do viewer
+    if (!this._resizeBound) {
+      this._resizeBound = () => {
+        if (this._resizeScheduled) return;
+        this._resizeScheduled = true;
+
+        requestAnimationFrame(() => {
+          this._resizeScheduled = false;
+          this._viewer?.updateSize();
+        });
+      };
+
+      window.addEventListener("resize", this._resizeBound);
+    }
 
     return this._viewer;
   }
@@ -65,32 +99,40 @@ export class ViewerManager {
     // se outra troca começou → aborta
     if (this._activeToken !== token) return;
 
-    // 🔴 primeira cena: sem fade
+    // primeira cena: sem fade
     if (!this._currentScene) {
       newScene.switchTo({ transitionDuration: 0 });
       this._currentScene = newScene;
       this._currentBuild = tiles.build;
 
-      // ✅ ATIVA CAPTURE NO MOMENTO CORRETO
-      if (this._viewerConfig.devPoiCapture && !this._disablePoiCapture) {
-        const container = document.getElementById(this._containerId);
-        this._disablePoiCapture = enablePoiCapture(this._view, container);
-        console.log("[POI Capture] ativado");
+      requestAnimationFrame(() => {
+        this._viewer?.updateSize();
+      });
+
+      if (this._viewerConfig.devPOVCapture && !this._disablePOVCapture) {
+        requestAnimationFrame(() => {
+          this._disablePOVCapture = enablePOVCapture(
+            this._view,
+            this._container,
+          );
+          console.log("[POI Capture] ativado");
+        });
       }
 
       return;
     }
 
-    // 🟢 crossfade suave
-    newScene.switchTo({
-      transitionDuration: 300, // ajuste fino de UX
+    // crossfade suave
+    newScene.switchTo({ transitionDuration: 300 });
+
+    requestAnimationFrame(() => {
+      this._viewer?.updateSize();
     });
 
     const oldScene = this._currentScene;
     this._currentScene = newScene;
     this._currentBuild = tiles.build;
 
-    // destruir antiga depois do fade
     setTimeout(() => {
       try {
         oldScene.destroy();
@@ -102,7 +144,16 @@ export class ViewerManager {
     this._cameraController?.focusOn(poiKey);
   }
 
+  updateSize() {
+    this._viewer?.updateSize();
+  }
+
   destroy() {
+    if (this._resizeBound) {
+      window.removeEventListener("resize", this._resizeBound);
+      this._resizeBound = null;
+    }
+
     this._viewer?.destroy();
     this._viewer = null;
   }

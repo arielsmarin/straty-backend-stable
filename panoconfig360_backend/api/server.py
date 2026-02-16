@@ -190,11 +190,11 @@ def render_cubemap(
 
         # Gera tiles
         logging.info("🧩 Gerando tiles...")
+
         process_cubemap(
             stack_img,
             tmp_dir,
             tile_size=512,
-            level=0,
             build=build_str
         )
 
@@ -331,7 +331,7 @@ def render_2d(payload: Render2DRequest):
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
             output_path = tmp.name
 
-        img.save(output_path, "JPEG", quality=95, subsampling=0)
+        img.save(output_path, "JPEG", quality=80, subsampling=0)
         upload_file(output_path, cdn_key, "image/jpeg")
 
         return {

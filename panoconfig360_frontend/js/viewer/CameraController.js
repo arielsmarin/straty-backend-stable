@@ -4,15 +4,31 @@
  */
 
 export const CAMERA_POIS = {
-  backsplash: { yaw: 3.3, pitch: 0.03 },
-  island: { yaw: -3.1, pitch: 0.16 },
-  table: { yaw: 0.03, pitch: 0.28 },
-  barbecue: { yaw: 2.83, pitch: -0.022 },
-  countertop: { yaw: -1.76, pitch: -0.05 },
-  wall_panel: { yaw: 1.5, pitch: 0.1 },
-  bed_panel: { yaw: 1.2, pitch: 0.3 },
-  base_bed: { yaw: 1.1, pitch: 0.4 },
-  floor: { yaw: 1, pitch: 0.75 },
+  //POV Gourmet
+  gourmet_backsplash: { yaw: 3.3, pitch: 0.03 },
+  gourmet_island: { yaw: -3.1, pitch: 0.16 },
+  gourmet_table: { yaw: 0.03, pitch: 0.28 },
+  gourmet_barbecue: { yaw: 2.83, pitch: -0.022 },
+  gourmet_countertop: { yaw: 3.1, pitch: 0.1 },
+
+  //POV Livingroom
+  living_wall_panel: { yaw: 1.5, pitch: 0.1 },
+  living_bed_panel: { yaw: 1.2, pitch: 0.3 },
+  living_base_bed: { yaw: 1.1, pitch: 0.4 },
+  living_floor: { yaw: 1, pitch: 0.75 },
+  
+  //POV Bathroom
+  bath_countertop: { yaw: 2.35, pitch: 0.5 },
+  bath_box: { yaw: 0, pitch: 0 },
+  bath_floor: { yaw: 0.2, pitch: 1.1 },
+
+  //POV Kitchen
+  kitchen_backsplash: { yaw: -1.55, pitch: 0 },
+  kitchen_island: { yaw: -1.55, pitch: 0.5 },
+  kitchen_countertop: { yaw: -2.5, pitch: 0.2 },
+
+  //POV Pool
+  pool: { yaw: 0.5, pitch: 1.2 },
 };
 
 export function CreateCameraController(view) {
@@ -22,8 +38,8 @@ export function CreateCameraController(view) {
 
   const PITCH_MIN = -Math.PI / 2 + 0.1;
   const PITCH_MAX = Math.PI / 2 - 0.1;
-  const FOV_MIN = (30 * Math.PI) / 180;
-  const FOV_MAX = (100 * Math.PI) / 180;
+  const FOV_MIN = (45 * Math.PI) / 180;
+  const FOV_MAX = (90 * Math.PI) / 180;
 
   // Intercepta métodos do view para aplicar limites
   const originalSetPitch = view.setPitch.bind(view);
@@ -72,7 +88,7 @@ export function CreateCameraController(view) {
 
   function focusOn(key) {
     const poi = CAMERA_POIS[normalizeId(key)];
-    
+
     if (!poi) {
       console.warn(`[CameraController] POI "${key}" não encontrado.`);
       return;
@@ -109,8 +125,18 @@ export function CreateCameraController(view) {
     currentAnimation = requestAnimationFrame(animate);
   }
 
+  view.addEventListener("change", () => {
+    const state = {
+      yaw: view.yaw(),
+      pitch: view.pitch(),
+      fov: view.fov(),
+    };
+
+    localStorage.setItem("pano-camera-state", JSON.stringify(state));
+  });
+
   // Corrige FOV inicial
-  view.setFov(clampFov(view.fov()));
+  view.setFov(FOV_MAX);
 
   return { focusOn, getState, restore };
 }
