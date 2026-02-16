@@ -13,6 +13,7 @@ export const CAMERA_POIS = {
   bed_panel: { yaw: 1.2, pitch: 0.3 },
   base_bed: { yaw: 1.1, pitch: 0.4 },
   floor: { yaw: 1, pitch: 0.75 },
+  bath_countertop: { yaw: 1.5, pitch: 0.5 }
 };
 
 export function CreateCameraController(view) {
@@ -23,7 +24,7 @@ export function CreateCameraController(view) {
   const PITCH_MIN = -Math.PI / 2 + 0.1;
   const PITCH_MAX = Math.PI / 2 - 0.1;
   const FOV_MIN = (30 * Math.PI) / 180;
-  const FOV_MAX = (100 * Math.PI) / 180;
+  const FOV_MAX = (75 * Math.PI) / 180;
 
   // Intercepta métodos do view para aplicar limites
   const originalSetPitch = view.setPitch.bind(view);
@@ -110,7 +111,7 @@ export function CreateCameraController(view) {
   }
 
   // Corrige FOV inicial
-  view.setFov(clampFov(view.fov()));
+  view.setFov(FOV_MAX);
 
   return { focusOn, getState, restore };
 }

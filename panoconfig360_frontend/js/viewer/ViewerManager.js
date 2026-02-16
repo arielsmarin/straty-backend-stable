@@ -1,6 +1,6 @@
 import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
 import { TilePattern } from "../utils/TilePattern.js";
-import { enablePoiCapture } from "../utils/poiCapture.js";
+import { enablePOVCapture } from "../utils/POVCapture.js";
 
 export class ViewerManager {
   constructor(containerId, viewerConfig = {}) {
@@ -18,6 +18,8 @@ export class ViewerManager {
     const container = document.getElementById(this._containerId);
     if (!container)
       throw new Error(`Container não encontrado: ${this._containerId}`);
+
+    this._container = container;
 
     if (typeof Marzipano === "undefined") {
       throw new Error("Marzipano não carregado");
@@ -76,10 +78,14 @@ export class ViewerManager {
       this._currentBuild = tiles.build;
 
       // ✅ ATIVA CAPTURE NO MOMENTO CORRETO
-      if (this._viewerConfig.devPoiCapture && !this._disablePoiCapture) {
-        const container = document.getElementById(this._containerId);
-        this._disablePoiCapture = enablePoiCapture(this._view, container);
-        console.log("[POI Capture] ativado");
+      if (this._viewerConfig.devPOVCapture && !this._disablePOVCapture) {
+        requestAnimationFrame(() => {
+          this._disablePOVCapture = enablePOVCapture(
+            this._view,
+            this._container,
+          );
+          console.log("[POI Capture] ativado");
+        });
       }
 
       return;

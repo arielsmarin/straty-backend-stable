@@ -17,15 +17,19 @@ export class ConfigLoader {
   async load() {
     try {
       // Tenta primeiro do static/config
-      const response = await fetch(`/panoconfig360_cache/clients/${this._clientId}/${this._clientId}_cfg.json`);
-      
+      const response = await fetch(
+        `/panoconfig360_cache/clients/${this._clientId}/${this._clientId}_cfg.json`,
+      );
+
       if (!response.ok) {
-        throw new Error(`Config não encontrado para cliente: ${this._clientId}`);
+        throw new Error(
+          `Config não encontrado para cliente: ${this._clientId}`,
+        );
       }
-      
+
       this._config = await response.json();
       this._scenes = this._config.scenes;
-      
+
       // Define cena inicial
       const sceneList = this.getSceneList();
       if (sceneList.length > 0) {
@@ -95,13 +99,13 @@ export class ConfigLoader {
    */
   getSceneList() {
     if (!this._scenes) return [];
-    
+
     return Object.entries(this._scenes)
       .map(([id, scene]) => ({
         id,
         label: scene.label || id,
         sceneIndex: scene.scene_index ?? 0,
-        layers: scene.layers || []
+        layers: scene.layers || [],
       }))
       .sort((a, b) => a.sceneIndex - b.sceneIndex);
   }
@@ -119,7 +123,7 @@ export class ConfigLoader {
    */
   getLayerItems(sceneId, layerId) {
     const layers = this.getLayers(sceneId);
-    const layer = layers.find(l => l.id === layerId);
+    const layer = layers.find((l) => l.id === layerId);
     return layer?.items || [];
   }
 
@@ -127,10 +131,13 @@ export class ConfigLoader {
    * Retorna configuração do viewer
    */
   getViewerConfig() {
-    return this._config?.viewer || {
-      tileSize: 512,
-      cubeSize: 1024,
-      defaultFov: Math.PI / 2
-    };
+    return (
+      this._config?.viewer || {
+        tileSize: 512,
+        cubeSize: 1024,
+        defaultFov: Math.PI / 2,
+        devPOVCapture: true,
+      }
+    );
   }
 }
