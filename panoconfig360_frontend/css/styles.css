@@ -42,12 +42,13 @@ section {
   overflow: hidden;
 }
 
-#pano-config-api {
+#pano-config-api,
+.marzipano-canvas {
+  background: rgb(51, 51, 51);
   flex: 1;
   height: 100%;
   position: relative;
 }
-
 
 /* =========================
    CONTAINER UI
