@@ -30,6 +30,14 @@ export class ViewerManager {
     this._lodFadeAnimId = null;
     this._lodFadeSaturation = 1;
     this._lodFadeTriggered = false;
+
+    // Progressive LOD geometry update
+    this._currentMaxLod = 0; // Track highest LOD level available
+    this._geometryLevels = [
+      { tileSize: 512, size: 512, fallbackOnly: true },  // LOD 0
+      { tileSize: 512, size: 1024 },                     // LOD 1
+      { tileSize: 512, size: 2048 },                     // LOD 2
+    ];
   }
 
   _buildTileKey(face, level, x, y) {
@@ -49,6 +57,52 @@ export class ViewerManager {
         0,     0,     0,     1,
       ],
     };
+  }
+
+  /**
+   * Updates the geometry to include LOD levels up to maxLod.
+   * This enables progressive loading: start with LOD 0, then add LOD 1, then LOD 2.
+   */
+  _updateGeometry(maxLod) {
+    if (maxLod <= this._currentMaxLod) return; // Already at this level or higher
+    if (maxLod >= this._geometryLevels.length) {
+      maxLod = this._geometryLevels.length - 1;
+    }
+
+    this._currentMaxLod = maxLod;
+    const levels = this._geometryLevels.slice(0, maxLod + 1);
+    this._geometry = new Marzipano.CubeGeometry(levels);
+
+    // Update the current scene with the new geometry
+    if (this._currentScene) {
+      try {
+        // Recreate the scene with the new geometry
+        const source = this._currentScene.source();
+        const newScene = this._viewer.createScene({
+          source,
+          geometry: this._geometry,
+          view: this._view,
+          pinFirstLevel: true,
+        });
+
+        // Switch without transition (seamless upgrade)
+        newScene.switchTo({ transitionDuration: 0 });
+
+        const oldScene = this._currentScene;
+        this._currentScene = newScene;
+
+        // Clean up old scene
+        setTimeout(() => {
+          try {
+            oldScene.destroy();
+          } catch {}
+        }, 50);
+
+        console.log(`[LOD] Geometry updated to LOD ${maxLod}`);
+      } catch (err) {
+        console.error('[LOD] Failed to update geometry:', err);
+      }
+    }
   }
 
   _cancelLodFade() {
@@ -159,7 +213,7 @@ export class ViewerManager {
           const nextCursor = body?.data?.cursor;
           const completed = body?.data?.completed;
           if (Array.isArray(events)) {
-            let hasLod1 = false;
+            let maxLodSeen = 0;
             for (const evt of events) {
               if (evt?.build !== tiles.build) continue;
               if (evt?.state !== "visible") continue;
@@ -170,10 +224,16 @@ export class ViewerManager {
               const [, face, level, x, y] = parts;
               const numLevel = Number(level);
               this.forceTileRefresh(face, numLevel, Number(x), Number(y));
-              if (numLevel >= 1) hasLod1 = true;
+              if (numLevel > maxLodSeen) {
+                maxLodSeen = numLevel;
+              }
             }
-            if (hasLod1 && this._currentScene) {
-              this._startLodFadeIn(this._currentScene);
+            // Update geometry when we see LOD 1 or LOD 2 tiles
+            if (maxLodSeen >= 1) {
+              this._updateGeometry(maxLodSeen);
+              if (this._currentScene) {
+                this._startLodFadeIn(this._currentScene);
+              }
             }
           }
           if (typeof nextCursor === "number") {
@@ -234,10 +294,10 @@ export class ViewerManager {
       fov: savedState?.fov ?? this._viewerConfig.defaultFov ?? Math.PI / 2,
     });
 
+    // Start with only LOD 0 - progressive loading will add higher LODs
+    this._currentMaxLod = 0;
     this._geometry = new Marzipano.CubeGeometry([
-      { tileSize: 512, size: 512, fallbackOnly: true },
-      { tileSize: 512, size: 1024 },
-      { tileSize: 512, size: 2048 },
+      this._geometryLevels[0],  // LOD 0 only
     ]);
 
     this._cameraController = CreateCameraController(this._view);
@@ -265,6 +325,12 @@ export class ViewerManager {
 
     const token = Symbol("scene");
     this._activeToken = token;
+
+    // Reset LOD level for new scene - start with LOD 0 only
+    this._currentMaxLod = 0;
+    this._geometry = new Marzipano.CubeGeometry([
+      this._geometryLevels[0],  // LOD 0 only
+    ]);
 
     const source = this._createFastRetrySource(tiles);
 
