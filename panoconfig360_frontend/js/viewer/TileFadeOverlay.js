@@ -1,14 +1,20 @@
 /**
- * TileFadeOverlay - Manages per-tile fade-in transitions
+ * TileFadeOverlay - Manages progressive tile loading transitions
  * 
- * Creates a canvas overlay that displays gray squares for tiles that haven't loaded yet.
- * As each tile loads, its corresponding square fades out smoothly, revealing the texture underneath.
+ * Creates a canvas overlay that fades from gray to transparent as tiles load.
+ * The fade is weighted by LOD level, so higher quality tiles have more impact.
  * 
  * This provides a visual feedback system where:
- * 1. Initially, all tiles show as solid gray (no texture loaded)
- * 2. As each 512px tile loads, it fades from gray to visible
- * 3. Works across all LOD levels (LOD 0, 1, 2, etc.)
- * 4. Each tile fades independently for smooth progressive loading
+ * 1. Initially, the entire panorama shows as gray (no tiles loaded)
+ * 2. As 512px tiles load progressively (LOD 0, 1, 2), the gray fades out
+ * 3. Higher LOD tiles (2048px) have more weight in the fade calculation
+ * 4. The result is a smooth transition from gray → low quality → high quality
+ * 
+ * Technical approach:
+ * - Tracks each tile's load state independently
+ * - Calculates weighted opacity based on LOD level (LOD 2 = 16x weight of LOD 0)
+ * - Renders a vignette-style gradient overlay that fades as tiles load
+ * - Uses requestAnimationFrame for smooth 60fps animations
  */
 
 export class TileFadeOverlay {
@@ -146,6 +152,7 @@ export class TileFadeOverlay {
 
   /**
    * Render gray squares for tiles that haven't fully faded in yet
+   * Uses LOD-aware opacity calculation for smooth progressive reveal
    */
   _render() {
     if (!this._ctx || !this._isActive) return;
@@ -159,30 +166,49 @@ export class TileFadeOverlay {
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
     
-    // Calculate weighted opacity based on tiles
-    // Higher LOD tiles (more detailed) have more weight in the calculation
+    // Calculate opacity per LOD level
+    const lodStats = new Map(); // level -> { totalOpacity, count, weight }
+    
+    this._tiles.forEach(tile => {
+      const level = tile.level;
+      if (!lodStats.has(level)) {
+        // Weight: LOD 0 = 1, LOD 1 = 4, LOD 2 = 16 (exponential, represents pixel count)
+        const weight = Math.pow(4, level);
+        lodStats.set(level, { totalOpacity: 0, count: 0, weight });
+      }
+      const stats = lodStats.get(level);
+      stats.totalOpacity += tile.opacity;
+      stats.count++;
+    });
+    
+    // Calculate weighted average opacity across all LOD levels
     let weightedOpacity = 0;
     let totalWeight = 0;
     
-    this._tiles.forEach(tile => {
-      // Weight: LOD 0 = 1, LOD 1 = 3, LOD 2 = 9 (exponential)
-      const weight = Math.pow(3, tile.level);
-      weightedOpacity += tile.opacity * weight;
-      totalWeight += weight;
+    lodStats.forEach(stats => {
+      const avgOpacity = stats.totalOpacity / stats.count;
+      weightedOpacity += avgOpacity * stats.weight;
+      totalWeight += stats.weight;
     });
     
     if (totalWeight > 0) {
-      const avgOpacity = weightedOpacity / totalWeight;
+      const finalOpacity = weightedOpacity / totalWeight;
       
-      if (avgOpacity > 0.01) {
-        ctx.fillStyle = TileFadeOverlay.GRAY_COLOR;
-        // Use a vignette-style overlay that's stronger at edges
+      if (finalOpacity > 0.01) {
+        // Create a gradient that's darker at edges (vignette effect)
+        // This looks better than a flat gray overlay
         const gradient = ctx.createRadialGradient(
           width / 2, height / 2, 0,
-          width / 2, height / 2, Math.max(width, height) / 1.5
+          width / 2, height / 2, Math.max(width, height) / 1.4
         );
-        gradient.addColorStop(0, `rgba(128, 128, 128, ${avgOpacity * 0.5})`);
-        gradient.addColorStop(1, `rgba(128, 128, 128, ${avgOpacity * 0.9})`);
+        
+        // Center is lighter (less gray), edges are darker (more gray)
+        const centerOpacity = finalOpacity * 0.35;
+        const edgeOpacity = finalOpacity * 0.75;
+        
+        gradient.addColorStop(0, `rgba(128, 128, 128, ${centerOpacity})`);
+        gradient.addColorStop(0.7, `rgba(128, 128, 128, ${(centerOpacity + edgeOpacity) / 2})`);
+        gradient.addColorStop(1, `rgba(128, 128, 128, ${edgeOpacity})`);
         
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, width, height);
