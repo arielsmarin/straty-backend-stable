@@ -167,16 +167,21 @@ GET /api/render/events?tile_root={tileRoot}&cursor={cursor}&limit=300
 
 ## Funcionalidades Principais
 
-### 1. Renderização Progressiva (2 Fases)
+### 1. Renderização Progressiva (3 Fases)
 
-- **Fase 1 (Síncrona)**: Gera LOD 0 e 1 em ~2-3 segundos
+- **Fase 1 (Síncrona)**: Gera LOD 0 em ~1-2 segundos
   - Usuário vê panorama imediatamente
-  - Qualidade média/boa para navegação inicial
+  - Qualidade inicial para navegação rápida
 
-- **Fase 2 (Background)**: Gera LOD 2+ progressivamente
+- **Fase 2 (Background)**: Gera LOD 1 progressivamente
+  - Tiles de resolução média gerados em background
+  - Frontend é notificado via polling de eventos
+  - Qualidade melhora gradualmente
+
+- **Fase 3 (Background)**: Gera LOD 2+ progressivamente
   - Tiles de alta resolução gerados em background
   - Frontend é notificado via polling de eventos
-  - Qualidade melhora gradualmente sem recarregar
+  - Qualidade melhora gradualmente até alta resolução
 
 ### 2. Sistema de Cache Inteligente
 
