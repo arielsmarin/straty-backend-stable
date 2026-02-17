@@ -62,10 +62,12 @@ O sistema de fade-in progressivo proporciona feedback visual suave durante o car
 👉 **[docs/TILE_FADE_TRANSITION.md](docs/TILE_FADE_TRANSITION.md)**
 
 Este documento explica:
-- Como funciona o overlay gradiente cinza → transparente
-- Sistema de peso por LOD (tiles de alta qualidade têm mais impacto)
+- Como funciona o sistema de placeholder por tile (textura ou cor)
+- Cada tile aparece de forma gradual e assíncrona dentro do seu LOD
+- LOD 0, LOD 1 e LOD 2 aparecem progressivamente
+- Configuração de textura personalizada para placeholders
 - Implementação técnica e otimizações de performance
-- Configuração e troubleshooting
+- Troubleshooting
 
 ## Estrutura do Projeto
 
