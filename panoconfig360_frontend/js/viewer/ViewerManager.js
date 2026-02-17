@@ -19,6 +19,23 @@ export class ViewerManager {
     this._uiElement = null;
   }
 
+
+  _setTileLoading(isLoading) {
+    if (!this._container) return;
+    this._container.classList.toggle("tile-loading", Boolean(isLoading));
+  }
+
+  _scheduleHideTileLoading(maxMs = 1800) {
+    if (this._tileLoadingTimeout) {
+      clearTimeout(this._tileLoadingTimeout);
+    }
+
+    this._tileLoadingTimeout = setTimeout(() => {
+      this._setTileLoading(false);
+      this._tileLoadingTimeout = null;
+    }, maxMs);
+  }
+
   initialize() {
     const container = document.getElementById(this._containerId);
     if (!container)
@@ -34,6 +51,9 @@ export class ViewerManager {
     this._viewer = new Marzipano.Viewer(container, {
       controls: { mouseViewMode: "drag" },
     });
+
+    this._renderCompleteHandler = () => this._setTileLoading(false);
+    this._viewer.addEventListener("renderComplete", this._renderCompleteHandler);
 
     // garante cálculo correto após layout flex
     requestAnimationFrame(() => {
@@ -85,6 +105,8 @@ export class ViewerManager {
 
     const token = Symbol("scene");
     this._activeToken = token;
+    this._setTileLoading(true);
+    this._scheduleHideTileLoading();
 
     const pattern = TilePattern.getMarzipanoPattern(tiles);
     const source = Marzipano.ImageUrlSource.fromString(pattern);
@@ -152,6 +174,16 @@ export class ViewerManager {
     if (this._resizeBound) {
       window.removeEventListener("resize", this._resizeBound);
       this._resizeBound = null;
+    }
+
+    if (this._viewer && this._renderCompleteHandler) {
+      this._viewer.removeEventListener("renderComplete", this._renderCompleteHandler);
+      this._renderCompleteHandler = null;
+    }
+
+    if (this._tileLoadingTimeout) {
+      clearTimeout(this._tileLoadingTimeout);
+      this._tileLoadingTimeout = null;
     }
 
     this._viewer?.destroy();

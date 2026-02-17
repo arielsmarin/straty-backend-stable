@@ -305,7 +305,7 @@ def render_cubemap(
                 tmp_dir,
                 tile_size=512,
                 build=build_str,
-                max_lod=0,
+                max_lod=1,
             )
             del stack_img
 
@@ -317,14 +317,14 @@ def render_cubemap(
                 "tileRoot": tile_root,
                 "generated_at": int(time.time()),
                 "status": "processing",
-                "last_stage": "lod0_ready",
+                "last_stage": "lod0_lod1_ready",
                 "lod0_tiles_count": lod0_uploaded,
             }
             meta_path = _write_metadata_file(metadata_payload, tmp_dir)
             upload_file(meta_path, metadata_key, "application/json")
 
             elapsed = time.monotonic() - start
-            logging.info("✅ LOD0 pronto para %s em %.2fs (%s tiles)", render_key, elapsed, lod0_uploaded)
+            logging.info("✅ LOD0/LOD1 prontos para %s em %.2fs (%s tiles)", render_key, elapsed, lod0_uploaded)
         except Exception as e:
             logging.exception("❌ Erro no render LOD0")
             raise HTTPException(500, f"Erro interno: {e}")
