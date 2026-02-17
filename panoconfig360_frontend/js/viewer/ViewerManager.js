@@ -12,7 +12,6 @@ export class ViewerManager {
     this._view = null;
     this._geometry = null;
     this._geometryLevels = null;
-    this._currentMaxLod = 0;
     this._cameraController = null;
     this._currentScene = null;
     this._currentBuild = null;
@@ -55,15 +54,6 @@ export class ViewerManager {
         0,     0,     0,     1,
       ],
     };
-  }
-
-  /**
-   * No-op: geometry is now initialized with all LOD levels from the start.
-   * Progressive loading is handled entirely via tile revision bumping
-   * (forceTileRefresh) — no scene recreation needed.
-   */
-  _updateGeometry(maxLod) {
-    // Geometry already contains all levels; nothing to do.
   }
 
   _cancelLodFade() {
@@ -266,7 +256,6 @@ export class ViewerManager {
     // Initialize geometry with all LOD levels from the start.
     // Progressive loading is handled via tile revision bumping (forceTileRefresh),
     // not by recreating scenes — this avoids flashes and redundant tile re-fetches.
-    this._currentMaxLod = this._geometryLevels.length - 1;
     this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
 
     // Initialize tile fade overlay for smooth per-tile loading transitions
@@ -299,7 +288,6 @@ export class ViewerManager {
     this._activeToken = token;
 
     // Reset geometry with all LOD levels for new scene
-    this._currentMaxLod = this._geometryLevels.length - 1;
     this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
 
     const source = this._createFastRetrySource(tiles);
