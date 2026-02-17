@@ -95,7 +95,9 @@ export class ViewerManager {
         setTimeout(() => {
           try {
             oldScene.destroy();
-          } catch {}
+          } catch (err) {
+            console.warn('[LOD] Failed to destroy old scene:', err);
+          }
         }, 50);
 
         console.log(`[LOD] Geometry updated to LOD ${maxLod}`);
