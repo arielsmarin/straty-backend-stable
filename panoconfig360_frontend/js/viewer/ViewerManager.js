@@ -2,6 +2,8 @@ import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
 import { enablePOVCapture } from "../utils/POVCapture.js";
 
 export class ViewerManager {
+  static LOD_FADE_INITIAL_SATURATION = 0.15;
+
   constructor(containerId, viewerConfig = {}) {
     this._containerId = containerId;
     this._viewerConfig = viewerConfig;
@@ -23,17 +25,80 @@ export class ViewerManager {
     this._tileEventPollTimer = null;
     this._tileEventCursor = 0;
     this._tileEventBuild = null;
+
+    // LOD fade transition state
+    this._lodFadeAnimId = null;
+    this._lodFadeSaturation = 1;
+    this._lodFadeTriggered = false;
   }
 
   _buildTileKey(face, level, x, y) {
     return `${face}:${level}:${x}:${y}`;
   }
 
-  /**
-   * Forces a tile to be refreshed by incrementing its revision number.
-   * This changes the tile URL from ?v=N to ?v=N+1, bypassing browser cache.
-   * Used when a higher quality version of a tile becomes available.
-   */
+  _buildSaturationEffects(sat) {
+    const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+    const s = Math.max(0, Math.min(1, sat));
+    const a = (1 - s) * lr, b = (1 - s) * lg, c = (1 - s) * lb;
+    return {
+      colorOffset: [0, 0, 0, 0],
+      colorMatrix: [
+        a + s, b,     c,     0,
+        a,     b + s, c,     0,
+        a,     b,     c + s, 0,
+        0,     0,     0,     1,
+      ],
+    };
+  }
+
+  _cancelLodFade() {
+    if (this._lodFadeAnimId) {
+      cancelAnimationFrame(this._lodFadeAnimId);
+      this._lodFadeAnimId = null;
+    }
+  }
+
+  _applyDesaturation(scene) {
+    this._cancelLodFade();
+    const sat = ViewerManager.LOD_FADE_INITIAL_SATURATION;
+    this._lodFadeSaturation = sat;
+    this._lodFadeTriggered = false;
+    try {
+      scene.layer().setEffects(this._buildSaturationEffects(sat));
+    } catch (_) { /* layer may not be ready */ }
+  }
+
+  _startLodFadeIn(scene) {
+    if (this._lodFadeTriggered) return;
+    this._lodFadeTriggered = true;
+    this._cancelLodFade();
+
+    const duration = 800;
+    const startSat = this._lodFadeSaturation;
+    const startTime = performance.now();
+
+    const step = (now) => {
+      if (this._currentScene !== scene) return;
+
+      const t = Math.min((now - startTime) / duration, 1);
+      const eased = t * (2 - t); // ease-out quadratic
+      const sat = startSat + (1 - startSat) * eased;
+      this._lodFadeSaturation = sat;
+
+      try {
+        scene.layer().setEffects(this._buildSaturationEffects(sat));
+      } catch (_) { /* layer may have been destroyed */ }
+
+      if (t < 1) {
+        this._lodFadeAnimId = requestAnimationFrame(step);
+      } else {
+        this._lodFadeAnimId = null;
+      }
+    };
+
+    this._lodFadeAnimId = requestAnimationFrame(step);
+  }
+
   forceTileRefresh(face, level, x, y) {
     const key = this._buildTileKey(face, level, x, y);
     const current = this._tileRevisionMap.get(key) || 0;
@@ -94,6 +159,7 @@ export class ViewerManager {
           const nextCursor = body?.data?.cursor;
           const completed = body?.data?.completed;
           if (Array.isArray(events)) {
+            let hasLod1 = false;
             for (const evt of events) {
               if (evt?.build !== tiles.build) continue;
               if (evt?.state !== "visible") continue;
@@ -102,7 +168,12 @@ export class ViewerManager {
               if (parts.length !== 5) continue;
 
               const [, face, level, x, y] = parts;
-              this.forceTileRefresh(face, Number(level), Number(x), Number(y));
+              const numLevel = Number(level);
+              this.forceTileRefresh(face, numLevel, Number(x), Number(y));
+              if (numLevel >= 1) hasLod1 = true;
+            }
+            if (hasLod1 && this._currentScene) {
+              this._startLodFadeIn(this._currentScene);
             }
           }
           if (typeof nextCursor === "number") {
@@ -213,6 +284,9 @@ export class ViewerManager {
       this._currentScene = newScene;
       this._currentBuild = tiles.build;
 
+      // LOD fade: inicia dessaturado
+      this._applyDesaturation(newScene);
+
       requestAnimationFrame(() => {
         this._viewer?.updateSize();
       });
@@ -234,6 +308,9 @@ export class ViewerManager {
 
     // crossfade suave
     newScene.switchTo({ transitionDuration: 300 });
+
+    // LOD fade: inicia dessaturado para a nova cena
+    this._applyDesaturation(newScene);
 
     requestAnimationFrame(() => {
       this._viewer?.updateSize();
@@ -265,7 +342,7 @@ export class ViewerManager {
       this._resizeBound = null;
     }
 
-
+    this._cancelLodFade();
     this._viewer?.destroy();
     this._viewer = null;
     this._stopTileEventPolling();
