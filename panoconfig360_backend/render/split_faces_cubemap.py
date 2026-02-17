@@ -105,10 +105,18 @@ def process_cubemap(
         raise ValueError("Cubemap horizontal inválido")
 
     # LODs EXATOS esperados pelo frontend
+    # Cada entrada é (lod_face_size, lod_tile_size):
+    #   lod0: face=512,  tile=256  -> { tileSize: 256, size: 512, fallbackOnly: true }
+    #   lod1: face=1024, tile=512  -> { tileSize: 512, size: 1024 }
+    #   lod2: face=2048, tile=512  -> { tileSize: 512, size: 2048 }
     lod_sizes = []
-    size = tile_size
+    # lod0: face=tile_size, tile=tile_size//2
+    if tile_size <= face_size:
+        lod_sizes.append((tile_size, tile_size // 2))
+    # lod1+: face dobra a cada nível, tile permanece tile_size
+    size = tile_size * 2
     while size <= face_size:
-        lod_sizes.append(size)
+        lod_sizes.append((size, tile_size))
         size *= 2
 
     if not lod_sizes:
@@ -142,7 +150,7 @@ def process_cubemap(
         faces.append((face_img, marzipano_face))
 
     # Gerar LOD controlado
-    for lod, target_size in enumerate(lod_sizes):
+    for lod, (target_size, lod_tile_size) in enumerate(lod_sizes):
         if lod < min_lod or lod > final_lod:
             continue
 
@@ -158,7 +166,7 @@ def process_cubemap(
 
                 resized.dzsave(
                     dz_prefix,
-                    tile_size=tile_size,
+                    tile_size=lod_tile_size,
                     overlap=0,
                     depth="one",
                     # progressive JPEG ajuda o tile a surgir de forma gradual no decode
@@ -183,7 +191,8 @@ def process_cubemap(
                     )
 
                     if on_tile_ready is not None:
-                        on_tile_ready(output_base_dir / filename, filename, lod)
+                        on_tile_ready(output_base_dir /
+                                      filename, filename, lod)
 
 
 """ def process_cubemap(
