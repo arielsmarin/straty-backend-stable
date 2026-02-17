@@ -216,7 +216,7 @@ Cada combinação única de materiais gera uma build string determinística em b
 
 ```python
 # Algoritmo em panoconfig360_backend/render/dynamic_stack.py
-# Linhas 101-129: build_string_from_selection()
+# Função: build_string_from_selection() (aproximadamente linhas 101-129)
 
 # Formato: [scene_index:2][layer0:2][layer1:2][layer2:2][layer3:2][layer4:2]
 # Total: 12 caracteres em base36 (0-9, a-z)

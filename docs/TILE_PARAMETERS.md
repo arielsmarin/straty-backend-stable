@@ -53,7 +53,7 @@ O sistema utiliza um processo de renderização em 2 fases:
 O frontend monitora continuamente o status dos tiles:
 
 ```javascript
-// ViewerManager.js, linhas 71-122
+// ViewerManager.js, linhas 71-126
 _scheduleTileEventPolling(tiles) {
   // Polling a cada 150ms
   // Busca eventos de novos tiles prontos
@@ -165,13 +165,13 @@ Map {
 ### ViewerManager (Frontend)
 ```javascript
 // Intervalo de polling
-const pollInterval = 150; // ms
+const pollInterval = 150; // ms (linha 122)
 
 // Concorrência de download
-const concurrency = 8; // tiles simultâneos
+const concurrency = 8; // tiles simultâneos (linha 60)
 
 // Delay de retry
-const retryDelay = 150; // ms
+const retryDelay = 150; // ms (linha 59)
 ```
 
 ### Server (Backend)
@@ -220,8 +220,8 @@ Isso significa:
 
 - **Frontend**: `panoconfig360_frontend/js/viewer/ViewerManager.js`
   - Linhas 19-22: Sistema de revisão de tiles (comentário e propriedade)
-  - Linhas 50-57: Criação de URL source com `?v=`
-  - Linhas 71-122: Polling de eventos e atualização
+  - Linhas 50-61: Criação de URL source com `?v=` e configurações
+  - Linhas 71-126: Polling de eventos e atualização
 
 - **Backend**: `panoconfig360_backend/api/server.py`
   - Linhas 76-91: Writer de eventos de estado de tiles
