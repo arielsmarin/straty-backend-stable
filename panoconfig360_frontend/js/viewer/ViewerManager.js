@@ -4,7 +4,6 @@ import { TileFadeOverlay } from "./TileFadeOverlay.js";
 
 export class ViewerManager {
   static LOD_FADE_INITIAL_SATURATION = 0.15;
-  static PLACEHOLDER_TILE_URL = null; // Can be set to a texture URL for tile placeholders
 
   constructor(containerId, viewerConfig = {}) {
     this._containerId = containerId;
@@ -354,10 +353,8 @@ export class ViewerManager {
     // Initial geometry with all levels (will be overridden by loadScene with progressive subset)
     this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
 
-    // Initialize tile fade overlay for smooth per-tile loading transitions
-    // Pass the placeholder URL from the static property or viewer config
-    const placeholderUrl = this._viewerConfig.placeholderTileUrl || ViewerManager.PLACEHOLDER_TILE_URL;
-    this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry, placeholderUrl);
+    // Initialize tile fade overlay for smooth LOD transitions
+    this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry);
 
     this._cameraController = CreateCameraController(this._view);
 
@@ -481,17 +478,6 @@ export class ViewerManager {
 
   updateSize() {
     this._viewer?.updateSize();
-  }
-
-  /**
-   * Set the placeholder tile URL for the tile fade overlay
-   * @param {string} url - URL of the placeholder image/texture
-   */
-  setPlaceholderTileUrl(url) {
-    ViewerManager.PLACEHOLDER_TILE_URL = url;
-    if (this._tileFadeOverlay) {
-      this._tileFadeOverlay.setPlaceholderUrl(url);
-    }
   }
 
   destroy() {
