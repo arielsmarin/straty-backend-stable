@@ -38,7 +38,7 @@ export class ViewerManager {
     const s = Math.max(0, Math.min(1, sat));
     const a = (1 - s) * lr, b = (1 - s) * lg, c = (1 - s) * lb;
     return {
-      colorOffset: { r: 0, g: 0, b: 0, a: 0 },
+      colorOffset: [0, 0, 0, 0],
       colorMatrix: [
         a + s, b,     c,     0,
         a,     b + s, c,     0,
