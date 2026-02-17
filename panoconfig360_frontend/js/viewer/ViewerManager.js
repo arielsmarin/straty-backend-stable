@@ -4,9 +4,10 @@ import { TileFadeOverlay } from "./TileFadeOverlay.js";
 
 export class ViewerManager {
   static LOD_FADE_INITIAL_SATURATION = 0.15;
-  // 1×1 gray JPEG placeholder used for tiles not yet generated on the backend.
-  // Returning this data-URI instead of a real URL avoids 404 network requests
-  // while Marzipano still receives a valid image it can decode.
+  // 1×1 gray SVG placeholder for tiles not yet generated on the backend.
+  // Decoded: <svg xmlns="…" width="1" height="1"><rect fill="#808080" width="1" height="1"/></svg>
+  // Returning a data-URI avoids 404 network requests while Marzipano still
+  // receives a valid image it can decode.
   static PLACEHOLDER_TILE_URL =
     "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%221%22%20height%3D%221%22%3E%3Crect%20fill%3D%22%2523808080%22%20width%3D%221%22%20height%3D%221%22%2F%3E%3C%2Fsvg%3E";
 
