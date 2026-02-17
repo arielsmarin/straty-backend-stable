@@ -69,19 +69,19 @@ export class TileFadeOverlay {
     }
 
     // Get geometry levels from Marzipano
-    const levels = this._geometry._levels || [];
+    const levels = this._geometry.levelList || [];
     const faces = ["f", "b", "l", "r", "u", "d"];
 
     // Initialize all tiles as fully opaque gray
     levels.forEach((level, levelIndex) => {
-      const tileSize = level.tileSize();
-      const size = level.size();
+      const tileSize = level.tileWidth ? level.tileWidth() : (level._tileSize || 512);
+      const size = level.width ? level.width() : (level._size || 512);
       const tilesPerSide = Math.ceil(size / tileSize);
 
       faces.forEach((face) => {
         for (let y = 0; y < tilesPerSide; y++) {
           for (let x = 0; x < tilesPerSide; x++) {
-            const key = this._buildTileKey(face, levelIndex, x, y);
+            const key = this._buildTileKey(build, face, levelIndex, x, y);
             this._tiles.set(key, {
               opacity: 1.0,
               fadeStartTime: null,
