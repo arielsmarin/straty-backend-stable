@@ -34,7 +34,7 @@ export class ViewerManager {
     // Progressive LOD geometry update
     this._currentMaxLod = 0; // Track highest LOD level available
     this._geometryLevels = [
-      { tileSize: 512, size: 512, fallbackOnly: true },  // LOD 0
+      { tileSize: 256, size: 512, fallbackOnly: true },  // LOD 0
       { tileSize: 512, size: 1024 },                     // LOD 1
       { tileSize: 512, size: 2048 },                     // LOD 2
     ];

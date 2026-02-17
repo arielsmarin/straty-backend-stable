@@ -38,7 +38,7 @@ O sistema utiliza um processo de renderização progressiva em múltiplas fases:
 - Resposta rápida (~1-2 segundos)
 - Tiles são servidos com `?v=0`
 - Usuário vê o panorama imediatamente, em qualidade inicial
-- Viewer carrega apenas geometria LOD 0: `{ tileSize: 512, size: 512, fallbackOnly: true }`
+- Viewer carrega apenas geometria LOD 0: `{ tileSize: 256, size: 512, fallbackOnly: true }`
 
 #### **Fase 2: LOD 1 (Background Progressivo)**
 - Processamento continua em background
