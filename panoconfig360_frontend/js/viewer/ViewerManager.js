@@ -4,7 +4,6 @@ import { TileFadeOverlay } from "./TileFadeOverlay.js";
 
 export class ViewerManager {
   static LOD_FADE_INITIAL_SATURATION = 0.15;
-  static PLACEHOLDER_TILE_URL = null; // Can be set to a texture URL for tile placeholders
 
   constructor(containerId, viewerConfig = {}) {
     this._containerId = containerId;
@@ -34,7 +33,7 @@ export class ViewerManager {
     this._maxAvailableLod = 0;
 
     // Ready-tile gating: tracks tiles confirmed available by the backend (via events).
-    // Tiles NOT in this set receive a placeholder data-URI so Marzipano never fires 404s.
+    // Tiles NOT in this set receive a 1x1 transparent PNG data-URI so Marzipano never fires 404s.
     this._readyTiles = new Set();
     this._allTilesReady = false;
 
@@ -200,18 +199,21 @@ export class ViewerManager {
    * forcing the browser to fetch the new version despite HTTP cache headers.
    *
    * Ready-tile gating: tiles not yet confirmed by the backend receive a tiny
-   * placeholder data-URI so the browser never issues a network request that
+   * 1x1 transparent PNG data-URI so the browser never issues a network request that
    * would result in a 404.  Once an event marks the tile as ready the revision
    * is bumped and Marzipano re-invokes this callback, now returning the real URL.
    */
   _createFastRetrySource(tiles) {
     const baseUrl = `${tiles.baseUrl}/${tiles.tileRoot}`;
+    // 1x1 transparent PNG as placeholder for tiles not yet ready
+    const placeholderDataUri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    
     return new Marzipano.ImageUrlSource((tile) => {
       const key = this._buildTileKey(tile.face, tile.z, tile.x, tile.y);
 
       // Return placeholder for tiles the backend hasn't finished writing yet
       if (!this._allTilesReady && !this._readyTiles.has(key)) {
-        return { url: ViewerManager.PLACEHOLDER_TILE_URL };
+        return { url: placeholderDataUri };
       }
 
       const rev = this._tileRevisionMap.get(key) || 0;
@@ -354,10 +356,8 @@ export class ViewerManager {
     // Initial geometry with all levels (will be overridden by loadScene with progressive subset)
     this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
 
-    // Initialize tile fade overlay for smooth per-tile loading transitions
-    // Pass the placeholder URL from the static property or viewer config
-    const placeholderUrl = this._viewerConfig.placeholderTileUrl || ViewerManager.PLACEHOLDER_TILE_URL;
-    this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry, placeholderUrl);
+    // Initialize tile fade overlay for smooth LOD transitions
+    this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry);
 
     this._cameraController = CreateCameraController(this._view);
 
@@ -481,17 +481,6 @@ export class ViewerManager {
 
   updateSize() {
     this._viewer?.updateSize();
-  }
-
-  /**
-   * Set the placeholder tile URL for the tile fade overlay
-   * @param {string} url - URL of the placeholder image/texture
-   */
-  setPlaceholderTileUrl(url) {
-    ViewerManager.PLACEHOLDER_TILE_URL = url;
-    if (this._tileFadeOverlay) {
-      this._tileFadeOverlay.setPlaceholderUrl(url);
-    }
   }
 
   destroy() {

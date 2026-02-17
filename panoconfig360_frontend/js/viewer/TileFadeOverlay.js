@@ -1,28 +1,24 @@
 /**
  * TileFadeOverlay - Manages progressive tile loading transitions
  *
- * Creates a canvas overlay that fades from a placeholder texture to transparent as tiles load.
- * Each tile shows its placeholder and fades in gradually and asynchronously as it loads.
+ * Provides visual feedback for LOD transitions between tiles.
+ * Each tile fades in gradually and asynchronously as it loads.
  *
  * This provides a visual feedback system where:
- * 1. Initially, all tiles show the placeholder texture
- * 2. As tiles load progressively in each LOD, they fade in asynchronously
- * 3. LOD 0 (256px tiles, 512px faces): placeholders fade as tiles arrive
- * 4. LOD 1 (512px tiles, 1024px faces): appears gradually on top of LOD 0
- * 5. LOD 2 (512px tiles, 2048px faces): appears gradually on top of LOD 1
+ * 1. LOD 0 (256px tiles, 512px faces): tiles fade in as they arrive
+ * 2. LOD 1 (512px tiles, 1024px faces): appears gradually on top of LOD 0
+ * 3. LOD 2 (512px tiles, 2048px faces): appears gradually on top of LOD 1
  *
  * Technical approach:
  * - Tracks each tile's load state independently
  * - Each tile fades in asynchronously within its LOD
- * - Renders placeholder texture that fades as actual tiles load
  * - Uses requestAnimationFrame for smooth 60fps animations
  */
 
 export class TileFadeOverlay {
-  static PLACEHOLDER_TILE_URL = null; // Will be set to a texture URL later
   static FADE_DURATION = 400; // milliseconds for each tile fade (faster for better UX)
 
-  constructor(container, geometry, placeholderUrl = null) {
+  constructor(container, geometry) {
     this._container = container;
     this._geometry = geometry;
     this._canvas = null;
@@ -30,12 +26,8 @@ export class TileFadeOverlay {
     this._tiles = new Map(); // tile key -> { opacity: 0-1, fadeStartTime: timestamp }
     this._animationFrame = null;
     this._isActive = false;
-    this._placeholderUrl = placeholderUrl || TileFadeOverlay.PLACEHOLDER_TILE_URL;
-    this._placeholderImage = null;
-    this._isPlaceholderLoaded = false;
 
     this._createCanvas();
-    this._loadPlaceholderImage();
   }
 
   _createCanvas() {
@@ -53,34 +45,6 @@ export class TileFadeOverlay {
     this._updateCanvasSize();
   }
 
-  _loadPlaceholderImage() {
-    if (!this._placeholderUrl) {
-      // If no placeholder URL, use gray color as fallback
-      this._isPlaceholderLoaded = true;
-      return;
-    }
-
-    this._placeholderImage = new Image();
-    this._placeholderImage.crossOrigin = "anonymous";
-    this._placeholderImage.onload = () => {
-      this._isPlaceholderLoaded = true;
-      this._render(); // Re-render with loaded placeholder
-    };
-    this._placeholderImage.onerror = () => {
-      console.warn("Failed to load placeholder image:", this._placeholderUrl);
-      this._isPlaceholderLoaded = true; // Fall back to gray
-    };
-    this._placeholderImage.src = this._placeholderUrl;
-  }
-
-  setPlaceholderUrl(url) {
-    if (this._placeholderUrl !== url) {
-      this._placeholderUrl = url;
-      this._isPlaceholderLoaded = false;
-      this._loadPlaceholderImage();
-    }
-  }
-
   _updateCanvasSize() {
     const rect = this._container.getBoundingClientRect();
     this._canvas.width = rect.width;
@@ -92,7 +56,7 @@ export class TileFadeOverlay {
   }
 
   /**
-   * Initialize all tiles for a new scene as gray (opacity = 1)
+   * Initialize all tiles for a new scene (opacity = 1)
    * This is called when a new scene is loaded
    */
   initializeScene(build) {
@@ -188,8 +152,8 @@ export class TileFadeOverlay {
   }
 
   /**
-   * Render placeholder for each tile that hasn't fully faded in yet
-   * Each tile fades in asynchronously within its LOD
+   * Render overlay for LOD transitions
+   * Tiles fade in asynchronously within their LOD
    */
   _render() {
     if (!this._ctx || !this._isActive) return;
@@ -200,58 +164,8 @@ export class TileFadeOverlay {
     const width = this._canvas.width;
     const height = this._canvas.height;
 
-    // Clear canvas
+    // Clear canvas - LOD transitions are handled by Marzipano's built-in system
     ctx.clearRect(0, 0, width, height);
-
-    if (!this._isPlaceholderLoaded) return;
-
-    // Render individual tile placeholders
-    // Each tile fades out asynchronously as it loads
-    this._tiles.forEach((tile) => {
-      if (tile.opacity <= 0.01) return; // Skip fully faded tiles
-
-      // Calculate tile position on screen using simplified 2D projection
-      // NOTE: This is an approximation - the actual panorama is rendered in 3D by Marzipano
-      // This overlay shows placeholders in a flat cross pattern for visual feedback
-      // Limitation: Positions may not perfectly align with 3D rendered tiles in viewport
-      const tilePixelSize = width / 6; // Each face gets 1/6 of canvas width in cross layout
-      const tileSize = tilePixelSize / tile.tilesPerSide;
-
-      // Arrange cube faces in a cross pattern on 2D canvas:
-      //        [U]
-      //    [L] [F] [R] [B]
-      //        [D]
-      let faceOffsetX = 0;
-      let faceOffsetY = 0;
-
-      switch (tile.face) {
-        case "f": faceOffsetX = tilePixelSize; faceOffsetY = tilePixelSize; break; // front
-        case "b": faceOffsetX = 3 * tilePixelSize; faceOffsetY = tilePixelSize; break; // back
-        case "l": faceOffsetX = 0; faceOffsetY = tilePixelSize; break; // left
-        case "r": faceOffsetX = 2 * tilePixelSize; faceOffsetY = tilePixelSize; break; // right
-        case "u": faceOffsetX = tilePixelSize; faceOffsetY = 0; break; // up
-        case "d": faceOffsetX = tilePixelSize; faceOffsetY = 2 * tilePixelSize; break; // down
-      }
-
-      const x = faceOffsetX + tile.x * tileSize;
-      const y = faceOffsetY + tile.y * tileSize;
-
-      // Set opacity for this tile
-      ctx.globalAlpha = tile.opacity;
-
-      // Draw placeholder texture or gray color
-      if (this._placeholderImage && this._placeholderImage.complete) {
-        // Draw the placeholder image, tiled to fit the tile area
-        ctx.drawImage(this._placeholderImage, x, y, tileSize, tileSize);
-      } else {
-        // Fallback to gray color
-        ctx.fillStyle = "#808080";
-        ctx.fillRect(x, y, tileSize, tileSize);
-      }
-    });
-
-    // Reset global alpha
-    ctx.globalAlpha = 1.0;
   }
 
   /**
@@ -265,12 +179,6 @@ export class TileFadeOverlay {
 
     if (this._canvas && this._canvas.parentNode) {
       this._canvas.parentNode.removeChild(this._canvas);
-    }
-
-    if (this._placeholderImage) {
-      this._placeholderImage.onload = null;
-      this._placeholderImage.onerror = null;
-      this._placeholderImage = null;
     }
 
     this._tiles.clear();

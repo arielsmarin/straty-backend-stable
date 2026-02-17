@@ -62,10 +62,9 @@ O sistema de fade-in progressivo proporciona feedback visual suave durante o car
 👉 **[docs/TILE_FADE_TRANSITION.md](docs/TILE_FADE_TRANSITION.md)**
 
 Este documento explica:
-- Como funciona o sistema de placeholder por tile (textura ou cor)
+- Como funciona o sistema de transição entre LOD levels
 - Cada tile aparece de forma gradual e assíncrona dentro do seu LOD
 - LOD 0, LOD 1 e LOD 2 aparecem progressivamente
-- Configuração de textura personalizada para placeholders
 - Implementação técnica e otimizações de performance
 - Troubleshooting
 
