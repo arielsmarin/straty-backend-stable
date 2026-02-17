@@ -438,7 +438,8 @@ def render_tile_events(tile_root: str, cursor: int = 0, limit: int = 200):
         completed = metadata.get("status") == "ready"
     except FileNotFoundError:
         completed = False
-    except Exception:
+    except (json.JSONDecodeError, IOError) as e:
+        logging.warning("⚠️ Failed to read metadata for completion check: %s", e)
         completed = False
 
     return {
