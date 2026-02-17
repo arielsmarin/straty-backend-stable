@@ -13,7 +13,7 @@
 
 export class TileFadeOverlay {
   static GRAY_COLOR = '#808080';
-  static FADE_DURATION = 600; // milliseconds for each tile fade
+  static FADE_DURATION = 400; // milliseconds for each tile fade (faster for better UX)
 
   constructor(container, geometry) {
     this._container = container;
@@ -159,26 +159,33 @@ export class TileFadeOverlay {
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
     
-    // For simplicity, we'll draw a full gray overlay with opacity
-    // This is a simplified version - a more complex version would project
-    // each cube face tile to screen coordinates
+    // Calculate weighted opacity based on tiles
+    // Higher LOD tiles (more detailed) have more weight in the calculation
+    let weightedOpacity = 0;
+    let totalWeight = 0;
     
-    // Calculate average opacity across all tiles
-    let totalOpacity = 0;
-    let count = 0;
     this._tiles.forEach(tile => {
-      totalOpacity += tile.opacity;
-      count++;
+      // Weight: LOD 0 = 1, LOD 1 = 3, LOD 2 = 9 (exponential)
+      const weight = Math.pow(3, tile.level);
+      weightedOpacity += tile.opacity * weight;
+      totalWeight += weight;
     });
     
-    if (count > 0) {
-      const avgOpacity = totalOpacity / count;
+    if (totalWeight > 0) {
+      const avgOpacity = weightedOpacity / totalWeight;
       
       if (avgOpacity > 0.01) {
         ctx.fillStyle = TileFadeOverlay.GRAY_COLOR;
-        ctx.globalAlpha = avgOpacity * 0.8; // Scale down for better visual effect
+        // Use a vignette-style overlay that's stronger at edges
+        const gradient = ctx.createRadialGradient(
+          width / 2, height / 2, 0,
+          width / 2, height / 2, Math.max(width, height) / 1.5
+        );
+        gradient.addColorStop(0, `rgba(128, 128, 128, ${avgOpacity * 0.5})`);
+        gradient.addColorStop(1, `rgba(128, 128, 128, ${avgOpacity * 0.9})`);
+        
+        ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, width, height);
-        ctx.globalAlpha = 1.0;
       }
     }
   }
