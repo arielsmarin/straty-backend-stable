@@ -19,6 +19,7 @@ from panoconfig360_backend.models.render_2d import Render2DRequest
 from panoconfig360_backend.storage.storage_local import (
     append_jsonl,
     exists,
+    get_json,
     read_jsonl_slice,
     upload_file,
 )
@@ -429,12 +430,24 @@ def render_tile_events(tile_root: str, cursor: int = 0, limit: int = 200):
     events_key = f"{tile_root}/tile_events.ndjson"
     events, next_cursor = read_jsonl_slice(events_key, cursor=cursor, limit=limit)
 
+    # Check if render is complete by reading metadata status
+    metadata_key = f"{tile_root}/metadata.json"
+    completed = False
+    try:
+        metadata = get_json(metadata_key)
+        completed = metadata.get("status") == "ready"
+    except FileNotFoundError:
+        completed = False
+    except Exception:
+        completed = False
+
     return {
         "status": "success",
         "data": {
             "events": events,
             "cursor": next_cursor,
             "hasMore": len(events) >= limit,
+            "completed": completed,
         },
     }
 

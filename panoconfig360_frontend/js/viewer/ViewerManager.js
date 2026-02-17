@@ -68,6 +68,7 @@ export class ViewerManager {
           const body = await res.json();
           const events = body?.data?.events;
           const nextCursor = body?.data?.cursor;
+          const completed = body?.data?.completed;
           if (Array.isArray(events)) {
             for (const evt of events) {
               if (evt?.build !== tiles.build) continue;
@@ -82,6 +83,12 @@ export class ViewerManager {
           }
           if (typeof nextCursor === "number") {
             this._tileEventCursor = nextCursor;
+          }
+
+          // Stop polling when render is complete and all events have been processed
+          if (completed && !body?.data?.hasMore) {
+            this._stopTileEventPolling();
+            return;
           }
         }
       } catch (_err) {
