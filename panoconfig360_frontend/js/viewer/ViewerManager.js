@@ -249,7 +249,7 @@ export class ViewerManager {
 
     // Store all geometry levels for progressive loading
     this._geometryLevels = [
-      { tileSize: 256, size: 512, fallbackOnly: true },
+      { tileSize: 256, size: 512, fallbackOnly: false },
       { tileSize: 512, size: 1024 },
       { tileSize: 512, size: 2048 },
     ];

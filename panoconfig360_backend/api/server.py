@@ -38,7 +38,7 @@ CLIENTS_ROOT = Path("panoconfig360_cache/clients")
 LOCAL_CACHE_DIR = ROOT_DIR / "panoconfig360_cache"
 FRONTEND_DIR = ROOT_DIR / "panoconfig360_frontend"
 os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
-TILE_RE = re.compile(r"^[0-9a-z]+_[tblr]_\d+_\d+_\d+\.jpg$")
+TILE_RE = re.compile(r"^[0-9a-z]+_[fblrud]_\d+_\d+_\d+\.jpg$")
 TILE_ROOT_RE = re.compile(r"^clients/[a-z0-9\-]+/cubemap/[a-z0-9\-]+/tiles/[0-9a-z]+$")
 
 USE_MASK_STACK = True
