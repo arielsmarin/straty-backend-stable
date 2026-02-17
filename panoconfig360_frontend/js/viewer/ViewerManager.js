@@ -4,12 +4,7 @@ import { TileFadeOverlay } from "./TileFadeOverlay.js";
 
 export class ViewerManager {
   static LOD_FADE_INITIAL_SATURATION = 0.15;
-  // 1×1 gray SVG placeholder for tiles not yet generated on the backend.
-  // Decoded: <svg xmlns="…" width="1" height="1"><rect fill="#808080" width="1" height="1"/></svg>
-  // Returning a data-URI avoids 404 network requests while Marzipano still
-  // receives a valid image it can decode.
-  static PLACEHOLDER_TILE_URL =
-    "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%221%22%20height%3D%221%22%3E%3Crect%20fill%3D%22%2523808080%22%20width%3D%221%22%20height%3D%221%22%2F%3E%3C%2Fsvg%3E";
+  static PLACEHOLDER_TILE_URL = null; // Can be set to a texture URL for tile placeholders
 
   constructor(containerId, viewerConfig = {}) {
     this._containerId = containerId;
@@ -360,7 +355,9 @@ export class ViewerManager {
     this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
 
     // Initialize tile fade overlay for smooth per-tile loading transitions
-    this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry);
+    // Pass the placeholder URL from the static property or viewer config
+    const placeholderUrl = this._viewerConfig.placeholderTileUrl || ViewerManager.PLACEHOLDER_TILE_URL;
+    this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry, placeholderUrl);
 
     this._cameraController = CreateCameraController(this._view);
 
@@ -484,6 +481,17 @@ export class ViewerManager {
 
   updateSize() {
     this._viewer?.updateSize();
+  }
+
+  /**
+   * Set the placeholder tile URL for the tile fade overlay
+   * @param {string} url - URL of the placeholder image/texture
+   */
+  setPlaceholderTileUrl(url) {
+    ViewerManager.PLACEHOLDER_TILE_URL = url;
+    if (this._tileFadeOverlay) {
+      this._tileFadeOverlay.setPlaceholderUrl(url);
+    }
   }
 
   destroy() {

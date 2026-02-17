@@ -1,27 +1,28 @@
 /**
  * TileFadeOverlay - Manages progressive tile loading transitions
  *
- * Creates a canvas overlay that fades from gray to transparent as tiles load.
- * The fade is weighted by LOD level, so higher quality tiles have more impact.
+ * Creates a canvas overlay that fades from a placeholder texture to transparent as tiles load.
+ * Each tile shows its placeholder and fades in gradually and asynchronously as it loads.
  *
  * This provides a visual feedback system where:
- * 1. Initially, the entire panorama shows as gray (no tiles loaded)
- * 2. As 512px tiles load progressively (LOD 0, 1, 2), the gray fades out
- * 3. Higher LOD tiles (2048px) have more weight in the fade calculation
- * 4. The result is a smooth transition from gray → low quality → high quality
+ * 1. Initially, all tiles show the placeholder texture
+ * 2. As tiles load progressively in each LOD, they fade in asynchronously
+ * 3. LOD 0 (256px tiles, 512px faces): placeholders fade as tiles arrive
+ * 4. LOD 1 (512px tiles, 1024px faces): appears gradually on top of LOD 0
+ * 5. LOD 2 (512px tiles, 2048px faces): appears gradually on top of LOD 1
  *
  * Technical approach:
  * - Tracks each tile's load state independently
- * - Calculates weighted opacity based on LOD level (LOD 2 = 16x weight of LOD 0)
- * - Renders a vignette-style gradient overlay that fades as tiles load
+ * - Each tile fades in asynchronously within its LOD
+ * - Renders placeholder texture that fades as actual tiles load
  * - Uses requestAnimationFrame for smooth 60fps animations
  */
 
 export class TileFadeOverlay {
-  static GRAY_COLOR = "#808080";
+  static PLACEHOLDER_TILE_URL = null; // Will be set to a texture URL later
   static FADE_DURATION = 400; // milliseconds for each tile fade (faster for better UX)
 
-  constructor(container, geometry) {
+  constructor(container, geometry, placeholderUrl = null) {
     this._container = container;
     this._geometry = geometry;
     this._canvas = null;
@@ -29,8 +30,12 @@ export class TileFadeOverlay {
     this._tiles = new Map(); // tile key -> { opacity: 0-1, fadeStartTime: timestamp }
     this._animationFrame = null;
     this._isActive = false;
+    this._placeholderUrl = placeholderUrl || TileFadeOverlay.PLACEHOLDER_TILE_URL;
+    this._placeholderImage = null;
+    this._isPlaceholderLoaded = false;
 
     this._createCanvas();
+    this._loadPlaceholderImage();
   }
 
   _createCanvas() {
@@ -46,6 +51,34 @@ export class TileFadeOverlay {
     this._container.appendChild(this._canvas);
 
     this._updateCanvasSize();
+  }
+
+  _loadPlaceholderImage() {
+    if (!this._placeholderUrl) {
+      // If no placeholder URL, use gray color as fallback
+      this._isPlaceholderLoaded = true;
+      return;
+    }
+
+    this._placeholderImage = new Image();
+    this._placeholderImage.crossOrigin = "anonymous";
+    this._placeholderImage.onload = () => {
+      this._isPlaceholderLoaded = true;
+      this._render(); // Re-render with loaded placeholder
+    };
+    this._placeholderImage.onerror = () => {
+      console.warn("Failed to load placeholder image:", this._placeholderUrl);
+      this._isPlaceholderLoaded = true; // Fall back to gray
+    };
+    this._placeholderImage.src = this._placeholderUrl;
+  }
+
+  setPlaceholderUrl(url) {
+    if (this._placeholderUrl !== url) {
+      this._placeholderUrl = url;
+      this._isPlaceholderLoaded = false;
+      this._loadPlaceholderImage();
+    }
   }
 
   _updateCanvasSize() {
@@ -155,8 +188,8 @@ export class TileFadeOverlay {
   }
 
   /**
-   * Render gray squares for tiles that haven't fully faded in yet
-   * Uses LOD-aware opacity calculation for smooth progressive reveal
+   * Render placeholder for each tile that hasn't fully faded in yet
+   * Each tile fades in asynchronously within its LOD
    */
   _render() {
     if (!this._ctx || !this._isActive) return;
@@ -170,61 +203,55 @@ export class TileFadeOverlay {
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
 
-    // Calculate opacity per LOD level
-    const lodStats = new Map(); // level -> { totalOpacity, count, weight }
+    if (!this._isPlaceholderLoaded) return;
 
+    // Render individual tile placeholders
+    // Each tile fades out asynchronously as it loads
     this._tiles.forEach((tile) => {
-      const level = tile.level;
-      if (!lodStats.has(level)) {
-        // Weight: LOD 0 = 1, LOD 1 = 4, LOD 2 = 16 (exponential, represents pixel count)
-        const weight = Math.pow(4, level);
-        lodStats.set(level, { totalOpacity: 0, count: 0, weight });
+      if (tile.opacity <= 0.01) return; // Skip fully faded tiles
+
+      // Calculate tile position on screen using simplified 2D projection
+      // NOTE: This is an approximation - the actual panorama is rendered in 3D by Marzipano
+      // This overlay shows placeholders in a flat cross pattern for visual feedback
+      // Limitation: Positions may not perfectly align with 3D rendered tiles in viewport
+      const tilePixelSize = width / 6; // Each face gets 1/6 of canvas width in cross layout
+      const tileSize = tilePixelSize / tile.tilesPerSide;
+
+      // Arrange cube faces in a cross pattern on 2D canvas:
+      //        [U]
+      //    [L] [F] [R] [B]
+      //        [D]
+      let faceOffsetX = 0;
+      let faceOffsetY = 0;
+
+      switch (tile.face) {
+        case "f": faceOffsetX = tilePixelSize; faceOffsetY = tilePixelSize; break; // front
+        case "b": faceOffsetX = 3 * tilePixelSize; faceOffsetY = tilePixelSize; break; // back
+        case "l": faceOffsetX = 0; faceOffsetY = tilePixelSize; break; // left
+        case "r": faceOffsetX = 2 * tilePixelSize; faceOffsetY = tilePixelSize; break; // right
+        case "u": faceOffsetX = tilePixelSize; faceOffsetY = 0; break; // up
+        case "d": faceOffsetX = tilePixelSize; faceOffsetY = 2 * tilePixelSize; break; // down
       }
-      const stats = lodStats.get(level);
-      stats.totalOpacity += tile.opacity;
-      stats.count++;
+
+      const x = faceOffsetX + tile.x * tileSize;
+      const y = faceOffsetY + tile.y * tileSize;
+
+      // Set opacity for this tile
+      ctx.globalAlpha = tile.opacity;
+
+      // Draw placeholder texture or gray color
+      if (this._placeholderImage && this._placeholderImage.complete) {
+        // Draw the placeholder image, tiled to fit the tile area
+        ctx.drawImage(this._placeholderImage, x, y, tileSize, tileSize);
+      } else {
+        // Fallback to gray color
+        ctx.fillStyle = "#808080";
+        ctx.fillRect(x, y, tileSize, tileSize);
+      }
     });
 
-    // Calculate weighted average opacity across all LOD levels
-    let weightedOpacity = 0;
-    let totalWeight = 0;
-
-    lodStats.forEach((stats) => {
-      const avgOpacity = stats.totalOpacity / stats.count;
-      weightedOpacity += avgOpacity * stats.weight;
-      totalWeight += stats.weight;
-    });
-
-    if (totalWeight > 0) {
-      const finalOpacity = weightedOpacity / totalWeight;
-
-      if (finalOpacity > 0.01) {
-        // Create a gradient that's darker at edges (vignette effect)
-        // This looks better than a flat gray overlay
-        const gradient = ctx.createRadialGradient(
-          width / 2,
-          height / 2,
-          0,
-          width / 2,
-          height / 2,
-          Math.max(width, height) / 1.4,
-        );
-
-        // Center is lighter (less gray), edges are darker (more gray)
-        const centerOpacity = finalOpacity * 0.35;
-        const edgeOpacity = finalOpacity * 0.75;
-
-        gradient.addColorStop(0, `rgba(128, 128, 128, ${centerOpacity})`);
-        gradient.addColorStop(
-          0.7,
-          `rgba(128, 128, 128, ${(centerOpacity + edgeOpacity) / 2})`,
-        );
-        gradient.addColorStop(1, `rgba(128, 128, 128, ${edgeOpacity})`);
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, width, height);
-      }
-    }
+    // Reset global alpha
+    ctx.globalAlpha = 1.0;
   }
 
   /**
@@ -238,6 +265,12 @@ export class TileFadeOverlay {
 
     if (this._canvas && this._canvas.parentNode) {
       this._canvas.parentNode.removeChild(this._canvas);
+    }
+
+    if (this._placeholderImage) {
+      this._placeholderImage.onload = null;
+      this._placeholderImage.onerror = null;
+      this._placeholderImage = null;
     }
 
     this._tiles.clear();
