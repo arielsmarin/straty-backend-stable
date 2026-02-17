@@ -28,6 +28,10 @@ export class ViewerManager {
     this._tileEventCursor = 0;
     this._tileEventBuild = null;
 
+    // Progressive LOD: tracks which LOD levels are available and current tiles info
+    this._currentTiles = null;
+    this._maxAvailableLod = 0;
+
     // LOD fade transition state
     this._lodFadeAnimId = null;
     this._lodFadeSaturation = 1;
@@ -61,6 +65,57 @@ export class ViewerManager {
       cancelAnimationFrame(this._lodFadeAnimId);
       this._lodFadeAnimId = null;
     }
+  }
+
+  /**
+   * Returns the subset of geometry levels available up to maxLod.
+   * When only LOD 0 is available, removes fallbackOnly so it renders as the primary level.
+   */
+  _getGeometryLevelsForLod(maxLod) {
+    const levels = this._geometryLevels.slice(0, maxLod + 1);
+    if (levels.length === 1 && levels[0].fallbackOnly) {
+      const { fallbackOnly, ...rest } = levels[0];
+      return [rest];
+    }
+    return levels;
+  }
+
+  /**
+   * Upgrades the current scene to include higher LOD levels.
+   * Called when backend events signal that new LOD tiles are ready.
+   * Creates a new scene with the expanded geometry and crossfades to it.
+   */
+  _upgradeToLod(maxLod) {
+    if (maxLod <= this._maxAvailableLod) return;
+    if (!this._currentTiles || !this._currentScene || !this._viewer) return;
+
+    this._maxAvailableLod = maxLod;
+    const tiles = this._currentTiles;
+
+    const levels = this._getGeometryLevelsForLod(maxLod);
+    this._geometry = new Marzipano.CubeGeometry(levels);
+
+    const source = this._createFastRetrySource(tiles);
+
+    const newScene = this._viewer.createScene({
+      source,
+      geometry: this._geometry,
+      view: this._view,
+      pinFirstLevel: true,
+    });
+
+    try {
+      newScene.layer().setEffects(this._buildSaturationEffects(this._lodFadeSaturation));
+    } catch (_) { /* layer may not be ready */ }
+
+    newScene.switchTo({ transitionDuration: 300 });
+
+    const oldScene = this._currentScene;
+    this._currentScene = newScene;
+
+    setTimeout(() => {
+      try { oldScene.destroy(); } catch {}
+    }, 350);
   }
 
   _applyDesaturation(scene) {
@@ -183,6 +238,10 @@ export class ViewerManager {
               
               if (numLevel > maxLodSeen) maxLodSeen = numLevel;
             }
+            // Progressive LOD: upgrade geometry when higher LODs become available
+            if (maxLodSeen > this._maxAvailableLod) {
+              this._upgradeToLod(maxLodSeen);
+            }
             if (maxLodSeen >= 1) {
               if (this._currentScene) {
                 this._startLodFadeIn(this._currentScene);
@@ -253,9 +312,7 @@ export class ViewerManager {
       { tileSize: 512, size: 1024 },
       { tileSize: 512, size: 2048 },
     ];
-    // Initialize geometry with all LOD levels from the start.
-    // Progressive loading is handled via tile revision bumping (forceTileRefresh),
-    // not by recreating scenes — this avoids flashes and redundant tile re-fetches.
+    // Initial geometry with all levels (will be overridden by loadScene with progressive subset)
     this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
 
     // Initialize tile fade overlay for smooth per-tile loading transitions
@@ -281,14 +338,18 @@ export class ViewerManager {
     return this._viewer;
   }
 
-  async loadScene(tiles) {
+  async loadScene(tiles, status) {
     if (!this._viewer) throw new Error("Viewer não inicializado");
 
     const token = Symbol("scene");
     this._activeToken = token;
 
-    // Reset geometry with all LOD levels for new scene
-    this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
+    // Progressive LOD: start with only available levels
+    this._currentTiles = tiles;
+    this._maxAvailableLod = (status === "generated") ? 0 : 2;
+
+    const levels = this._getGeometryLevelsForLod(this._maxAvailableLod);
+    this._geometry = new Marzipano.CubeGeometry(levels);
 
     const source = this._createFastRetrySource(tiles);
 
