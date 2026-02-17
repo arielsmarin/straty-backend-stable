@@ -10,6 +10,7 @@ Este projeto implementa um configurador interativo de ambientes 360° que permit
 - Renderização progressiva de panoramas em alta qualidade
 - Visualização imediata com carregamento otimizado de tiles
 - Sistema de cache inteligente para melhor performance
+- **Transições suaves de tiles** com fade-in gradual durante carregamento
 
 ## Arquitetura
 
@@ -24,6 +25,7 @@ Este projeto implementa um configurador interativo de ambientes 360° que permit
   - Carregamento progressivo de tiles
   - Sistema de cache-busting com parâmetros `?v=`
   - Polling de eventos para atualização de qualidade em tempo real
+  - Sistema de fade-in suave para tiles durante carregamento
 
 ### CRUD App
 - **`simple_crud_app/`**: Interface de gerenciamento de configurações
@@ -53,12 +55,25 @@ Este documento explica em detalhes:
 - Estrutura de dados e configurações
 - Troubleshooting e otimizações
 
+### 🎨 Sistema de Transição de Tiles
+
+O sistema de fade-in progressivo proporciona feedback visual suave durante o carregamento:
+
+👉 **[docs/TILE_FADE_TRANSITION.md](docs/TILE_FADE_TRANSITION.md)**
+
+Este documento explica:
+- Como funciona o overlay gradiente cinza → transparente
+- Sistema de peso por LOD (tiles de alta qualidade têm mais impacto)
+- Implementação técnica e otimizações de performance
+- Configuração e troubleshooting
+
 ## Estrutura do Projeto
 
 ```
 panoconfig360_totem/
 ├── docs/                           # Documentação técnica
-│   └── TILE_PARAMETERS.md         # Explicação do sistema ?v=
+│   ├── TILE_PARAMETERS.md          # Explicação do sistema ?v=
+│   └── TILE_FADE_TRANSITION.md     # Sistema de fade-in de tiles
 ├── panoconfig360_backend/          # API Backend (FastAPI)
 │   ├── api/
 │   │   └── server.py              # Endpoints principais
@@ -72,7 +87,8 @@ panoconfig360_totem/
 ├── panoconfig360_frontend/         # Frontend (Vanilla JS)
 │   ├── js/
 │   │   ├── viewer/
-│   │   │   └── ViewerManager.js   # Gerenciamento de tiles e ?v=
+│   │   │   ├── ViewerManager.js   # Gerenciamento de tiles e ?v=
+│   │   │   └── TileFadeOverlay.js # Sistema de fade-in de tiles
 │   │   ├── ui/
 │   │   └── core/
 │   ├── css/

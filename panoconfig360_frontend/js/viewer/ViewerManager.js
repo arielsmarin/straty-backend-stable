@@ -1,5 +1,6 @@
 import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
 import { enablePOVCapture } from "../utils/POVCapture.js";
+import { TileFadeOverlay } from "./TileFadeOverlay.js";
 
 export class ViewerManager {
   static LOD_FADE_INITIAL_SATURATION = 0.15;
@@ -31,13 +32,8 @@ export class ViewerManager {
     this._lodFadeSaturation = 1;
     this._lodFadeTriggered = false;
 
-    // Progressive LOD geometry update
-    this._currentMaxLod = 0; // Track highest LOD level available
-    this._geometryLevels = [
-      { tileSize: 256, size: 512, fallbackOnly: true },  // LOD 0
-      { tileSize: 512, size: 1024 },                     // LOD 1
-      { tileSize: 512, size: 2048 },                     // LOD 2
-    ];
+    // Per-tile fade overlay
+    this._tileFadeOverlay = null;
   }
 
   _buildTileKey(face, level, x, y) {
@@ -226,9 +222,13 @@ export class ViewerManager {
               const [, face, level, x, y] = parts;
               const numLevel = Number(level);
               this.forceTileRefresh(face, numLevel, Number(x), Number(y));
-              if (numLevel > maxLodSeen) {
-                maxLodSeen = numLevel;
+              
+              // Mark tile as loaded in the fade overlay
+              if (this._tileFadeOverlay) {
+                this._tileFadeOverlay.markTileLoaded(face, numLevel, Number(x), Number(y));
               }
+              
+              if (numLevel >= 1) hasLod1 = true;
             }
             // Update geometry when we see LOD 1 or LOD 2 tiles
             if (maxLodSeen >= 1) {
@@ -299,8 +299,13 @@ export class ViewerManager {
     // Start with only LOD 0 - progressive loading will add higher LODs
     this._currentMaxLod = 0;
     this._geometry = new Marzipano.CubeGeometry([
-      this._geometryLevels[0],  // LOD 0 only
+      { tileSize: 256, size: 512, fallbackOnly: true },
+      { tileSize: 512, size: 1024 },
+      { tileSize: 512, size: 2048 },
     ]);
+
+    // Initialize tile fade overlay for smooth per-tile loading transitions
+    this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry);
 
     this._cameraController = CreateCameraController(this._view);
 
@@ -355,6 +360,11 @@ export class ViewerManager {
       // LOD fade: inicia dessaturado
       this._applyDesaturation(newScene);
 
+      // Initialize tile fade overlay for this scene
+      if (this._tileFadeOverlay) {
+        this._tileFadeOverlay.initializeScene(tiles.build);
+      }
+
       requestAnimationFrame(() => {
         this._viewer?.updateSize();
       });
@@ -379,6 +389,11 @@ export class ViewerManager {
 
     // LOD fade: inicia dessaturado para a nova cena
     this._applyDesaturation(newScene);
+
+    // Initialize tile fade overlay for new scene
+    if (this._tileFadeOverlay) {
+      this._tileFadeOverlay.initializeScene(tiles.build);
+    }
 
     requestAnimationFrame(() => {
       this._viewer?.updateSize();
@@ -411,6 +426,13 @@ export class ViewerManager {
     }
 
     this._cancelLodFade();
+    
+    // Clean up tile fade overlay
+    if (this._tileFadeOverlay) {
+      this._tileFadeOverlay.destroy();
+      this._tileFadeOverlay = null;
+    }
+    
     this._viewer?.destroy();
     this._viewer = null;
     this._stopTileEventPolling();
