@@ -2,7 +2,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import pyvips
 
@@ -91,6 +91,7 @@ def process_cubemap(
     build="unknown",
     max_lod: Optional[int] = None,
     min_lod: int = 0,
+    on_tile_ready: Optional[Callable[[Path, str, int], None]] = None,
 ):
     output_base_dir = Path(output_base_dir)
     output_base_dir.mkdir(parents=True, exist_ok=True)
@@ -160,7 +161,8 @@ def process_cubemap(
                     tile_size=tile_size,
                     overlap=0,
                     depth="one",
-                    suffix=".jpg[Q=80]",
+                    # progressive JPEG ajuda o tile a surgir de forma gradual no decode
+                    suffix=".jpg[Q=80,interlace=true,optimize_coding=true]",
                     container="fs",
                 )
 
@@ -179,6 +181,9 @@ def process_cubemap(
                         str(tile),
                         str(output_base_dir / filename)
                     )
+
+                    if on_tile_ready is not None:
+                        on_tile_ready(output_base_dir / filename, filename, lod)
 
 
 """ def process_cubemap(

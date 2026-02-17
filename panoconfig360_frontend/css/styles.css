@@ -49,20 +49,6 @@ section {
 }
 
 
-#pano-config-api::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.12);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 220ms ease-out;
-}
-
-#pano-config-api.tile-loading::after {
-  opacity: 1;
-}
-
 /* =========================
    CONTAINER UI
    ========================= */

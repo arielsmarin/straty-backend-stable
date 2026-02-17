@@ -17,6 +17,7 @@ from panoconfig360_backend.render.split_faces_cubemap import process_cubemap
 from panoconfig360_backend.render.stack_2d import render_stack_2d
 from panoconfig360_backend.models.render_2d import Render2DRequest
 from panoconfig360_backend.storage.storage_local import exists, upload_file
+from panoconfig360_backend.storage.tile_upload_queue import TileUploadQueue
 from panoconfig360_backend.render.scene_context import resolve_scene_context
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -58,21 +59,6 @@ def _get_render_lock(render_key: str) -> threading.Lock:
         return render_locks[render_key]
 
 
-def _upload_jpg_tiles(tmp_dir: str, tile_root: str) -> int:
-    uploaded_count = 0
-
-    for filename in os.listdir(tmp_dir):
-        if not filename.lower().endswith(".jpg"):
-            continue
-
-        file_path = os.path.join(tmp_dir, filename)
-        key = f"{tile_root}/{filename}"
-        upload_file(file_path, key, "image/jpeg")
-        uploaded_count += 1
-
-    return uploaded_count
-
-
 def _write_metadata_file(metadata_payload: dict, tmp_dir: str) -> str:
     meta_path = os.path.join(tmp_dir, "metadata.json")
     with open(meta_path, "w", encoding="utf-8") as f:
@@ -98,7 +84,11 @@ def _render_remaining_lods(
         ctx = resolve_scene_context(project, scene_id)
 
         tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_bg_")
+        uploader = None
         try:
+            uploader = TileUploadQueue(tile_root=tile_root, upload_fn=upload_file, workers=4)
+            uploader.start()
+
             stack_img = stack_layers_image_only(
                 scene_id=scene_id,
                 layers=ctx["layers"],
@@ -112,10 +102,11 @@ def _render_remaining_lods(
                 tile_size=512,
                 build=build_str,
                 min_lod=1,
+                on_tile_ready=uploader.enqueue,
             )
             del stack_img
-
-            uploaded_count = _upload_jpg_tiles(tmp_dir, tile_root)
+            uploader.close_and_wait()
+            uploaded_count = uploader.uploaded_count
             metadata_payload = {
                 "client": client_id,
                 "scene": scene_id,
@@ -125,6 +116,13 @@ def _render_remaining_lods(
                 "status": "ready",
                 "last_stage": "background_lods_done",
                 "background_tiles_count": uploaded_count,
+                "tile_state_counts": {
+                    "generated": 0,
+                    "uploading": 0,
+                    "uploaded": 0,
+                    "fading-in": 0,
+                    "visible": len(uploader.states),
+                },
             }
             meta_path = _write_metadata_file(metadata_payload, tmp_dir)
             upload_file(meta_path, metadata_key, "application/json")
@@ -134,6 +132,11 @@ def _render_remaining_lods(
                 uploaded_count,
             )
         finally:
+            if uploader is not None:
+                try:
+                    uploader.close_and_wait()
+                except Exception:
+                    logging.exception("❌ Erro ao encerrar fila de upload em background (%s)", render_key)
             shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception:
         logging.exception("❌ Falha na geração de LODs em background para %s", render_key)
@@ -291,8 +294,12 @@ def render_cubemap(
         start = time.monotonic()
         tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod0_")
         logging.info(f"📁 Temp dir: {tmp_dir}")
+        uploader = None
 
         try:
+            uploader = TileUploadQueue(tile_root=tile_root, upload_fn=upload_file, workers=4)
+            uploader.start()
+
             stack_img = stack_layers_image_only(
                 scene_id=scene_id,
                 layers=scene_layers,
@@ -306,10 +313,12 @@ def render_cubemap(
                 tile_size=512,
                 build=build_str,
                 max_lod=1,
+                on_tile_ready=uploader.enqueue,
             )
             del stack_img
+            uploader.close_and_wait()
 
-            lod0_uploaded = _upload_jpg_tiles(tmp_dir, tile_root)
+            lod0_uploaded = uploader.uploaded_count
             metadata_payload = {
                 "client": client_id,
                 "scene": scene_id,
@@ -319,6 +328,13 @@ def render_cubemap(
                 "status": "processing",
                 "last_stage": "lod0_lod1_ready",
                 "lod0_tiles_count": lod0_uploaded,
+                "tile_state_counts": {
+                    "generated": 0,
+                    "uploading": 0,
+                    "uploaded": 0,
+                    "fading-in": 0,
+                    "visible": len(uploader.states),
+                },
             }
             meta_path = _write_metadata_file(metadata_payload, tmp_dir)
             upload_file(meta_path, metadata_key, "application/json")
@@ -329,6 +345,11 @@ def render_cubemap(
             logging.exception("❌ Erro no render LOD0")
             raise HTTPException(500, f"Erro interno: {e}")
         finally:
+            if uploader is not None:
+                try:
+                    uploader.close_and_wait()
+                except Exception:
+                    logging.exception("❌ Erro ao encerrar fila de upload (%s)", render_key)
             shutil.rmtree(tmp_dir, ignore_errors=True)
             logging.info(f"🧹 Temp removido: {tmp_dir}")
 
