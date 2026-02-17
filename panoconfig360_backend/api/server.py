@@ -347,7 +347,7 @@ def render_cubemap(
                 tmp_dir,
                 tile_size=512,
                 build=build_str,
-                max_lod=1,
+                max_lod=0,
                 on_tile_ready=uploader.enqueue,
             )
             del stack_img
@@ -361,7 +361,7 @@ def render_cubemap(
                 "tileRoot": tile_root,
                 "generated_at": int(time.time()),
                 "status": "processing",
-                "last_stage": "lod0_lod1_ready",
+                "last_stage": "lod0_ready",
                 "lod0_tiles_count": lod0_uploaded,
                 "tile_state_counts": {
                     "generated": 0,
@@ -375,7 +375,7 @@ def render_cubemap(
             upload_file(meta_path, metadata_key, "application/json")
 
             elapsed = time.monotonic() - start
-            logging.info("✅ LOD0/LOD1 prontos para %s em %.2fs (%s tiles)", render_key, elapsed, lod0_uploaded)
+            logging.info("✅ LOD0 pronto para %s em %.2fs (%s tiles)", render_key, elapsed, lod0_uploaded)
         except Exception as e:
             logging.exception("❌ Erro no render LOD0")
             raise HTTPException(500, f"Erro interno: {e}")
@@ -400,7 +400,7 @@ def render_cubemap(
                 metadata_key,
             )
             active_background_renders.add(render_key)
-            logging.info("🧵 Background task agendada para LODs > 0 (%s)", render_key)
+            logging.info("🧵 Background task agendada para LODs >= 1 (%s)", render_key)
 
     tiles = {
         "baseUrl": "/panoconfig360_cache",

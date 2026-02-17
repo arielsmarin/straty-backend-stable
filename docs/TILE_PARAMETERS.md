@@ -31,22 +31,34 @@ const url = `${baseUrl}/${tiles.build}_${tile.face}_${tile.z}_${tile.x}_${tile.y
 
 ### 3. Workflow de Renderização Progressiva
 
-O sistema utiliza um processo de renderização em 2 fases:
+O sistema utiliza um processo de renderização progressiva em múltiplas fases:
 
-#### **Fase 1: LOD 0 e LOD 1 (Resposta Imediata)**
-- O servidor gera apenas os tiles de baixa resolução (LOD 0 e LOD 1)
-- Resposta rápida (~2-3 segundos)
+#### **Fase 1: LOD 0 (Resposta Imediata)**
+- O servidor gera apenas os tiles de baixa resolução (LOD 0)
+- Resposta rápida (~1-2 segundos)
 - Tiles são servidos com `?v=0`
-- Usuário vê o panorama imediatamente, mas com qualidade média
+- Usuário vê o panorama imediatamente, em qualidade inicial
+- Viewer carrega apenas geometria LOD 0: `{ tileSize: 256, size: 512, fallbackOnly: true }`
 
-#### **Fase 2: LODs Superiores (Background)**
+#### **Fase 2: LOD 1 (Background Progressivo)**
 - Processamento continua em background
-- Tiles de alta resolução (LOD 2+) são gerados gradualmente
+- Tiles de resolução média (LOD 1) são gerados gradualmente
 - Backend envia eventos via `/api/render/events`
-- Frontend detecta novos tiles disponíveis
+- Frontend detecta novos tiles LOD 1 disponíveis
+- Viewer adiciona geometria LOD 1: `{ tileSize: 512, size: 1024 }`
 - `forceTileRefresh()` é chamado para incrementar a revisão
 - Browser recarrega o tile com `?v=1`, ignorando o cache
 - Usuário vê gradualmente a qualidade melhorando
+
+#### **Fase 3: LOD 2+ (Background Progressivo)**
+- Processamento continua em background
+- Tiles de alta resolução (LOD 2+) são gerados gradualmente
+- Backend envia eventos via `/api/render/events`
+- Frontend detecta novos tiles LOD 2 disponíveis
+- Viewer adiciona geometria LOD 2: `{ tileSize: 512, size: 2048 }`
+- `forceTileRefresh()` é chamado para incrementar a revisão
+- Browser recarrega o tile com `?v=2`, ignorando o cache
+- Usuário vê gradualmente a qualidade melhorando até alta resolução
 
 ### 4. Polling de Eventos de Tiles
 
@@ -111,27 +123,49 @@ GET /api/render/events?tile_root={tileRoot}&cursor={cursor}&limit=300
    ↓
 2. Frontend faz POST /api/render
    ↓
-3. Backend gera LOD 0+1 (rápido)
+3. Backend gera LOD 0 (rápido, ~1-2s)
    ↓
 4. Backend retorna tiles com build={hash}
    ↓
-5. Frontend carrega tiles com ?v=0
+5. Frontend carrega geometria LOD 0 apenas
    ↓
-6. Frontend inicia polling de eventos
+6. Frontend carrega tiles LOD 0 com ?v=0
    ↓
-7. Backend gera LOD 2+ em background
+7. Frontend inicia polling de eventos
    ↓
-8. Backend escreve eventos em tile_events.ndjson
+8. Backend gera LOD 1 em background
    ↓
-9. Frontend recebe eventos via /api/render/events
+9. Backend escreve eventos em tile_events.ndjson
    ↓
-10. Frontend chama forceTileRefresh(face, level, x, y)
+10. Frontend recebe eventos via /api/render/events
     ↓
-11. Revisão incrementada: ?v=0 → ?v=1
+11. Frontend detecta LOD 1 pronto
     ↓
-12. Browser recarrega tile (ignora cache)
+12. Frontend atualiza geometria para incluir LOD 1
     ↓
-13. Usuário vê melhoria gradual de qualidade
+13. Frontend chama forceTileRefresh(face, 1, x, y)
+    ↓
+14. Revisão incrementada: ?v=0 → ?v=1
+    ↓
+15. Browser recarrega tile LOD 1 (ignora cache)
+    ↓
+16. Backend gera LOD 2+ em background
+    ↓
+17. Backend escreve eventos em tile_events.ndjson
+    ↓
+18. Frontend recebe eventos via /api/render/events
+    ↓
+19. Frontend detecta LOD 2 pronto
+    ↓
+20. Frontend atualiza geometria para incluir LOD 2
+    ↓
+21. Frontend chama forceTileRefresh(face, 2, x, y)
+    ↓
+22. Revisão incrementada: ?v=1 → ?v=2
+    ↓
+23. Browser recarrega tile LOD 2 (ignora cache)
+    ↓
+24. Usuário vê melhoria progressiva de qualidade
 ```
 
 ## Estrutura de Dados
