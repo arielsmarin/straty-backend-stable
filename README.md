@@ -212,17 +212,28 @@ panoconfig360_cache/
 
 ### Build String
 
-Cada combinação única de materiais gera uma build string determinística:
+Cada combinação única de materiais gera uma build string determinística em base36:
 
-```
-cena-id + materiais selecionados → hash em base36
-Exemplo: "1g4k2p8"
+```python
+# Algoritmo em panoconfig360_backend/render/dynamic_stack.py
+# Linhas 101-129: build_string_from_selection()
+
+# Formato: [scene_index:2][layer0:2][layer1:2][layer2:2][layer3:2][layer4:2]
+# Total: 12 caracteres em base36 (0-9, a-z)
+
+# Exemplo:
+# Scene 1, materiais [5, 10, 3, 0, 7] → "01050a03000z"
 ```
 
-Isso permite:
+**Componentes:**
+- **2 chars**: Índice da cena (00-zz em base36)
+- **10 chars**: 5 layers × 2 chars cada (índice do material selecionado)
+
+**Benefícios:**
 - Reuso de cache para mesmas seleções
 - Identificação única de cada configuração
 - URLs previsíveis e cacheáveis
+- String compacta (12 chars vs hash longo)
 
 ## Tecnologias Utilizadas
 

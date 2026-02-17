@@ -11,7 +11,7 @@ O parâmetro `?v=` nas URLs dos tiles é um **cache-busting parameter** (parâme
 Cada tile no panorama 360° possui um número de revisão que é incrementado quando uma nova versão do tile fica disponível:
 
 ```javascript
-// ViewerManager.js, linha 19
+// ViewerManager.js, linha 22
 this._tileRevisionMap = new Map();
 ```
 
@@ -20,7 +20,7 @@ this._tileRevisionMap = new Map();
 Quando um tile é carregado, sua URL é construída com o parâmetro `?v=` seguido do número de revisão:
 
 ```javascript
-// ViewerManager.js, linhas 38-42
+// ViewerManager.js, linha 56
 const url = `${baseUrl}/${tiles.build}_${tile.face}_${tile.z}_${tile.x}_${tile.y}.jpg?v=${rev}`;
 ```
 
@@ -53,7 +53,7 @@ O sistema utiliza um processo de renderização em 2 fases:
 O frontend monitora continuamente o status dos tiles:
 
 ```javascript
-// ViewerManager.js, linhas 61-102
+// ViewerManager.js, linhas 71-122
 _scheduleTileEventPolling(tiles) {
   // Polling a cada 150ms
   // Busca eventos de novos tiles prontos
@@ -219,9 +219,9 @@ Isso significa:
 ## Referências no Código
 
 - **Frontend**: `panoconfig360_frontend/js/viewer/ViewerManager.js`
-  - Linhas 19-34: Sistema de revisão de tiles
-  - Linhas 36-47: Criação de URL source com `?v=`
-  - Linhas 56-102: Polling de eventos e atualização
+  - Linhas 19-22: Sistema de revisão de tiles (comentário e propriedade)
+  - Linhas 50-57: Criação de URL source com `?v=`
+  - Linhas 71-122: Polling de eventos e atualização
 
 - **Backend**: `panoconfig360_backend/api/server.py`
   - Linhas 76-91: Writer de eventos de estado de tiles
