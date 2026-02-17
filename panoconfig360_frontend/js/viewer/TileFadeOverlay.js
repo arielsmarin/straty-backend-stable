@@ -210,17 +210,20 @@ export class TileFadeOverlay {
     this._tiles.forEach((tile) => {
       if (tile.opacity <= 0.01) return; // Skip fully faded tiles
 
-      // Calculate tile position on screen
-      // This is a simplified projection - tiles are rendered as a grid overlay
-      const tilePixelSize = width / 6; // Approximate size (6 faces arranged)
+      // Calculate tile position on screen using simplified 2D projection
+      // NOTE: This is an approximation - the actual panorama is rendered in 3D by Marzipano
+      // This overlay shows placeholders in a flat cross pattern for visual feedback
+      // Limitation: Positions may not perfectly align with 3D rendered tiles in viewport
+      const tilePixelSize = width / 6; // Each face gets 1/6 of canvas width in cross layout
       const tileSize = tilePixelSize / tile.tilesPerSide;
 
-      // For cube faces, we render on a 2D projection
-      // This is simplified - proper projection would require 3D math
+      // Arrange cube faces in a cross pattern on 2D canvas:
+      //        [U]
+      //    [L] [F] [R] [B]
+      //        [D]
       let faceOffsetX = 0;
       let faceOffsetY = 0;
 
-      // Arrange faces in a cross pattern (approximate)
       switch (tile.face) {
         case "f": faceOffsetX = tilePixelSize; faceOffsetY = tilePixelSize; break; // front
         case "b": faceOffsetX = 3 * tilePixelSize; faceOffsetY = tilePixelSize; break; // back
