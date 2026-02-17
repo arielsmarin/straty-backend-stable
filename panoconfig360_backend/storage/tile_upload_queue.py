@@ -2,11 +2,17 @@ import logging
 import queue
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 
 class TileUploadQueue:
-    def __init__(self, tile_root: str, upload_fn: Callable[[str, str, str], None], workers: int = 4):
+    def __init__(
+        self,
+        tile_root: str,
+        upload_fn: Callable[[str, str, str], None],
+        workers: int = 4,
+        on_state_change: Optional[Callable[[str, str, int], None]] = None,
+    ):
         self.tile_root = tile_root
         self.upload_fn = upload_fn
         self.workers = max(1, workers)
@@ -23,14 +29,24 @@ class TileUploadQueue:
 
         self._errors: list[Exception] = []
         self._errors_lock = threading.Lock()
+        self._on_state_change = on_state_change
 
     def _set_state(self, filename: str, state: str):
         with self._states_lock:
             self._states[filename] = state
 
+    def _emit_state(self, filename: str, state: str, lod: int):
+        if self._on_state_change is None:
+            return
+        try:
+            self._on_state_change(filename, state, lod)
+        except Exception:
+            logging.exception("❌ Falha no callback de estado do tile %s", filename)
+
     def enqueue(self, file_path: Path, filename: str, lod: int):
         _ = lod
         self._set_state(filename, "generated")
+        self._emit_state(filename, "generated", lod)
         self._queue.put((file_path, filename, lod))
 
     def _worker(self):
@@ -43,11 +59,15 @@ class TileUploadQueue:
             file_path, filename, _lod = item
             try:
                 self._set_state(filename, "uploading")
+                self._emit_state(filename, "uploading", _lod)
                 key = f"{self.tile_root}/{filename}"
                 self.upload_fn(str(file_path), key, "image/jpeg")
                 self._set_state(filename, "uploaded")
+                self._emit_state(filename, "uploaded", _lod)
                 self._set_state(filename, "fading-in")
+                self._emit_state(filename, "fading-in", _lod)
                 self._set_state(filename, "visible")
+                self._emit_state(filename, "visible", _lod)
                 with self._uploaded_count_lock:
                     self._uploaded_count += 1
             except Exception as exc:

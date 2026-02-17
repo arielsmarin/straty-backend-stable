@@ -1,11 +1,13 @@
 import os
 import json
 import logging
+import threading
 from pathlib import Path
 
 ASSETS_ROOT = Path(__file__).resolve().parents[2] / "panoconfig360_cache"
 
 logging.info(f"📁 Using local assets root: {ASSETS_ROOT}")
+_append_lock = threading.Lock()
 
 
 def _resolve_path(key: str) -> Path:
@@ -63,3 +65,42 @@ def get_json(key: str) -> dict:
         logging.error(f"❌ Failed to read JSON {key}: {e}")
         raise
     return data
+
+
+def append_jsonl(key: str, payload: dict):
+    path = _resolve_path(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    line = json.dumps(payload, ensure_ascii=False)
+    with _append_lock:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+
+def read_jsonl_slice(key: str, cursor: int = 0, limit: int = 200) -> tuple[list[dict], int]:
+    path = _resolve_path(key)
+    if not path.exists():
+        return [], cursor
+
+    events: list[dict] = []
+    next_cursor = cursor
+
+    with open(path, "r", encoding="utf-8") as f:
+        for idx, line in enumerate(f):
+            if idx < cursor:
+                continue
+
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                logging.warning("⚠️ Linha inválida em jsonl: %s", key)
+
+            next_cursor = idx + 1
+            if len(events) >= limit:
+                break
+
+    return events, next_cursor

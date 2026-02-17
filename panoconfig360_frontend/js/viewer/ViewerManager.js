@@ -1,5 +1,4 @@
 import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
-import { TilePattern } from "../utils/TilePattern.js";
 import { enablePOVCapture } from "../utils/POVCapture.js";
 
 export class ViewerManager {
@@ -17,6 +16,82 @@ export class ViewerManager {
     this._resizeBound = null;
     this._resizeScheduled = false;
     this._uiElement = null;
+    this._tileRevisionMap = new Map();
+    this._tileEventPollTimer = null;
+    this._tileEventCursor = 0;
+    this._tileEventBuild = null;
+  }
+
+  _buildTileKey(face, level, x, y) {
+    return `${face}:${level}:${x}:${y}`;
+  }
+
+  forceTileRefresh(face, level, x, y) {
+    const key = this._buildTileKey(face, level, x, y);
+    const current = this._tileRevisionMap.get(key) || 0;
+    this._tileRevisionMap.set(key, current + 1);
+    this._viewer?.updateSize();
+  }
+
+  _createFastRetrySource(tiles) {
+    const baseUrl = `${tiles.baseUrl}/${tiles.tileRoot}`;
+    return new Marzipano.ImageUrlSource((tile) => {
+      const key = this._buildTileKey(tile.face, tile.z, tile.x, tile.y);
+      const rev = this._tileRevisionMap.get(key) || 0;
+      const url = `${baseUrl}/${tiles.build}_${tile.face}_${tile.z}_${tile.x}_${tile.y}.jpg?v=${rev}`;
+      return { url };
+    }, {
+      retryDelay: 150,
+      concurrency: 8,
+    });
+  }
+
+  _stopTileEventPolling() {
+    if (this._tileEventPollTimer) {
+      clearTimeout(this._tileEventPollTimer);
+      this._tileEventPollTimer = null;
+    }
+  }
+
+  _scheduleTileEventPolling(tiles) {
+    this._stopTileEventPolling();
+    this._tileEventCursor = 0;
+    this._tileEventBuild = tiles.build;
+
+    const poll = async () => {
+      if (this._tileEventBuild !== tiles.build) return;
+
+      try {
+        const url = `/api/render/events?tile_root=${encodeURIComponent(tiles.tileRoot)}&cursor=${this._tileEventCursor}&limit=300`;
+        const res = await fetch(url, { cache: "no-store" });
+        if (res.ok) {
+          const body = await res.json();
+          const events = body?.data?.events;
+          const nextCursor = body?.data?.cursor;
+          if (Array.isArray(events)) {
+            for (const evt of events) {
+              if (evt?.build !== tiles.build) continue;
+              if (evt?.state !== "visible") continue;
+
+              const parts = String(evt.filename || "").replace(/\.jpg$/i, "").split("_");
+              if (parts.length !== 5) continue;
+
+              const [, face, level, x, y] = parts;
+              this.forceTileRefresh(face, Number(level), Number(x), Number(y));
+            }
+          }
+          if (typeof nextCursor === "number") {
+            this._tileEventCursor = nextCursor;
+          }
+        }
+      } catch (_err) {
+        // polling best-effort
+      }
+
+      this._tileEventPollTimer = setTimeout(poll, 150);
+    };
+
+    poll();
   }
 
 
@@ -89,8 +164,7 @@ export class ViewerManager {
     const token = Symbol("scene");
     this._activeToken = token;
 
-    const pattern = TilePattern.getMarzipanoPattern(tiles);
-    const source = Marzipano.ImageUrlSource.fromString(pattern);
+    const source = this._createFastRetrySource(tiles);
 
     const newScene = this._viewer.createScene({
       source,
@@ -111,6 +185,8 @@ export class ViewerManager {
       requestAnimationFrame(() => {
         this._viewer?.updateSize();
       });
+
+      this._scheduleTileEventPolling(tiles);
 
       if (this._viewerConfig.devPOVCapture && !this._disablePOVCapture) {
         requestAnimationFrame(() => {
@@ -135,6 +211,7 @@ export class ViewerManager {
     const oldScene = this._currentScene;
     this._currentScene = newScene;
     this._currentBuild = tiles.build;
+    this._scheduleTileEventPolling(tiles);
 
     setTimeout(() => {
       try {
@@ -160,5 +237,6 @@ export class ViewerManager {
 
     this._viewer?.destroy();
     this._viewer = null;
+    this._stopTileEventPolling();
   }
 }

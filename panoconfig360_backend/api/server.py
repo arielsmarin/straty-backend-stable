@@ -16,7 +16,12 @@ from panoconfig360_backend.render.dynamic_stack import (
 from panoconfig360_backend.render.split_faces_cubemap import process_cubemap
 from panoconfig360_backend.render.stack_2d import render_stack_2d
 from panoconfig360_backend.models.render_2d import Render2DRequest
-from panoconfig360_backend.storage.storage_local import exists, upload_file
+from panoconfig360_backend.storage.storage_local import (
+    append_jsonl,
+    exists,
+    read_jsonl_slice,
+    upload_file,
+)
 from panoconfig360_backend.storage.tile_upload_queue import TileUploadQueue
 from panoconfig360_backend.render.scene_context import resolve_scene_context
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +38,7 @@ LOCAL_CACHE_DIR = ROOT_DIR / "panoconfig360_cache"
 FRONTEND_DIR = ROOT_DIR / "panoconfig360_frontend"
 os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
 TILE_RE = re.compile(r"^[0-9a-z]+_[tblr]_\d+_\d+_\d+\.jpg$")
+TILE_ROOT_RE = re.compile(r"^clients/[a-z0-9\-]+/cubemap/[a-z0-9\-]+/tiles/[0-9a-z]+$")
 
 USE_MASK_STACK = True
 
@@ -66,6 +72,24 @@ def _write_metadata_file(metadata_payload: dict, tmp_dir: str) -> str:
     return meta_path
 
 
+def _tile_state_event_writer(tile_root: str, build_str: str):
+    events_key = f"{tile_root}/tile_events.ndjson"
+
+    def _writer(filename: str, state: str, lod: int):
+        append_jsonl(
+            events_key,
+            {
+                "filename": filename,
+                "build": build_str,
+                "state": state,
+                "lod": lod,
+                "ts": int(time.time() * 1000),
+            },
+        )
+
+    return _writer
+
+
 def _render_remaining_lods(
     client_id: str,
     scene_id: str,
@@ -86,7 +110,12 @@ def _render_remaining_lods(
         tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_bg_")
         uploader = None
         try:
-            uploader = TileUploadQueue(tile_root=tile_root, upload_fn=upload_file, workers=4)
+            uploader = TileUploadQueue(
+                tile_root=tile_root,
+                upload_fn=upload_file,
+                workers=4,
+                on_state_change=_tile_state_event_writer(tile_root, build_str),
+            )
             uploader.start()
 
             stack_img = stack_layers_image_only(
@@ -297,7 +326,12 @@ def render_cubemap(
         uploader = None
 
         try:
-            uploader = TileUploadQueue(tile_root=tile_root, upload_fn=upload_file, workers=4)
+            uploader = TileUploadQueue(
+                tile_root=tile_root,
+                upload_fn=upload_file,
+                workers=4,
+                on_state_change=_tile_state_event_writer(tile_root, build_str),
+            )
             uploader.start()
 
             stack_img = stack_layers_image_only(
@@ -380,6 +414,28 @@ def render_cubemap(
         "scene": scene_id,
         "build": build_str,
         "tiles": tiles,
+    }
+
+
+@app.get("/api/render/events")
+def render_tile_events(tile_root: str, cursor: int = 0, limit: int = 200):
+    if not TILE_ROOT_RE.match(tile_root):
+        raise HTTPException(status_code=400, detail="tile_root inválido")
+
+    if cursor < 0:
+        raise HTTPException(status_code=400, detail="cursor inválido")
+
+    limit = max(1, min(limit, 500))
+    events_key = f"{tile_root}/tile_events.ndjson"
+    events, next_cursor = read_jsonl_slice(events_key, cursor=cursor, limit=limit)
+
+    return {
+        "status": "success",
+        "data": {
+            "events": events,
+            "cursor": next_cursor,
+            "hasMore": len(events) >= limit,
+        },
     }
 
 
