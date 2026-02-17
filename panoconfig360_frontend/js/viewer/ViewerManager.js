@@ -16,6 +16,9 @@ export class ViewerManager {
     this._resizeBound = null;
     this._resizeScheduled = false;
     this._uiElement = null;
+    // Progressive tile loading: tracks revision number for each tile to enable cache-busting
+    // When a tile is updated (e.g., higher LOD available), its revision is incremented
+    // and the URL changes from ?v=0 to ?v=1, forcing the browser to fetch the new version
     this._tileRevisionMap = new Map();
     this._tileEventPollTimer = null;
     this._tileEventCursor = 0;
@@ -26,6 +29,11 @@ export class ViewerManager {
     return `${face}:${level}:${x}:${y}`;
   }
 
+  /**
+   * Forces a tile to be refreshed by incrementing its revision number.
+   * This changes the tile URL from ?v=N to ?v=N+1, bypassing browser cache.
+   * Used when a higher quality version of a tile becomes available.
+   */
   forceTileRefresh(face, level, x, y) {
     const key = this._buildTileKey(face, level, x, y);
     const current = this._tileRevisionMap.get(key) || 0;
@@ -33,11 +41,18 @@ export class ViewerManager {
     this._viewer?.updateSize();
   }
 
+  /**
+   * Creates a Marzipano image source with progressive loading support.
+   * Each tile URL includes a ?v=N parameter (revision number) for cache-busting.
+   * When higher quality tiles become available, the revision is incremented,
+   * forcing the browser to fetch the new version despite HTTP cache headers.
+   */
   _createFastRetrySource(tiles) {
     const baseUrl = `${tiles.baseUrl}/${tiles.tileRoot}`;
     return new Marzipano.ImageUrlSource((tile) => {
       const key = this._buildTileKey(tile.face, tile.z, tile.x, tile.y);
       const rev = this._tileRevisionMap.get(key) || 0;
+      // The ?v= parameter enables cache-busting: ?v=0 (initial), ?v=1 (updated), etc.
       const url = `${baseUrl}/${tiles.build}_${tile.face}_${tile.z}_${tile.x}_${tile.y}.jpg?v=${rev}`;
       return { url };
     }, {
@@ -53,6 +68,15 @@ export class ViewerManager {
     }
   }
 
+  /**
+   * Schedules periodic polling of tile events from the backend.
+   * The backend generates tiles progressively (LOD 0/1 first, then LOD 2+ in background).
+   * This function polls /api/render/events to detect when new high-quality tiles are ready
+   * and triggers forceTileRefresh() to update them in the viewer.
+   * 
+   * Polling frequency: 150ms
+   * Stops when: render is complete AND all events have been processed
+   */
   _scheduleTileEventPolling(tiles) {
     this._stopTileEventPolling();
     this._tileEventCursor = 0;
