@@ -2,6 +2,8 @@ import { CreateCameraController, CAMERA_POIS } from "./CameraController.js";
 import { enablePOVCapture } from "../utils/POVCapture.js";
 
 export class ViewerManager {
+  static LOD_FADE_INITIAL_SATURATION = 0.15;
+
   constructor(containerId, viewerConfig = {}) {
     this._containerId = containerId;
     this._viewerConfig = viewerConfig;
@@ -55,10 +57,11 @@ export class ViewerManager {
 
   _applyDesaturation(scene) {
     this._cancelLodFade();
-    this._lodFadeSaturation = 0.15;
+    const sat = ViewerManager.LOD_FADE_INITIAL_SATURATION;
+    this._lodFadeSaturation = sat;
     this._lodFadeTriggered = false;
     try {
-      scene.layer().setEffects(this._buildSaturationEffects(0.15));
+      scene.layer().setEffects(this._buildSaturationEffects(sat));
     } catch (_) { /* layer may not be ready */ }
   }
 
