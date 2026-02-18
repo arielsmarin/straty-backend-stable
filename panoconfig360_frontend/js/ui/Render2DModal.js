@@ -38,7 +38,7 @@ export class Render2DModal {
     header.className = "render-modal-header";
 
     const title = document.createElement("h3");
-    title.textContent = "Save Design";
+    title.textContent = "Combinação Renderizada";
 
     const closeBtn = document.createElement("button");
     closeBtn.innerHTML = "×";
@@ -68,7 +68,7 @@ export class Render2DModal {
     center.className = "render-column";
 
     const specsTitle = document.createElement("h4");
-    specsTitle.textContent = "Design Specifications";
+    specsTitle.textContent = "Materiais escolhidos";
 
     this._specificationsContainer = document.createElement("div");
     this._specificationsContainer.className = "specifications-container";
@@ -265,27 +265,75 @@ export class Render2DModal {
 
   showLoading() {
     this._container.style.display = "flex";
+
+    // Esconde conteúdo
     this._img.style.display = "none";
-    this._specificationsContainer.innerHTML = "<p>Gerando render...</p>";
-    this._qrContainer.innerHTML = "";
+    this._specificationsContainer.style.display = "none";
+    this._qrContainer.style.display = "none";
+
+    // Mostra mensagem de loading
+    if (!this._loadingMsg) {
+      this._loadingMsg = document.createElement("div");
+      this._loadingMsg.className = "render-loading";
+      this._loadingMsg.textContent = "Gerando render da combinação...";
+      this._container
+        .querySelector(".render-column")
+        .appendChild(this._loadingMsg);
+    }
+
+    this._loadingMsg.style.display = "block";
   }
 
-  showImage(url, specs = [], shareLink = null) {
+  showImage(url, specs = null, shareLink = null) {
+    this._container.style.display = "flex";
+
+    // Esconde loading
+    if (this._loadingMsg) {
+      this._loadingMsg.style.display = "none";
+    }
+
+    // Mostra imagem
     this._img.src = url;
     this._img.style.display = "block";
 
-    if (specs.length) this.setSpecifications(specs);
-    if (shareLink) {
-      this._shareLink = shareLink;
-      this.generateQRCode(shareLink);
+    // Se não vier specs, não renderiza nada
+    if (specs && specs.length) {
+      this._specificationsContainer.style.display = "block";
+      this.setSpecifications(specs);
+    } else {
+      this._specificationsContainer.style.display = "none";
     }
 
-    this._container.style.display = "flex";
+    // Se não vier shareLink, gera automaticamente
+    if (!shareLink) {
+      shareLink = window.location.href;
+    }
+
+    this._shareLink = shareLink;
+    this._qrContainer.style.display = "block";
+    this.generateQRCode(shareLink);
   }
 
   showError(message = "Erro ao gerar render") {
     this._container.style.display = "flex";
+
+    if (this._loadingMsg) {
+      this._loadingMsg.style.display = "none";
+    }
+
     this._img.style.display = "none";
-    this._specificationsContainer.innerHTML = `<p style="color:red;">${message}</p>`;
+    this._specificationsContainer.style.display = "none";
+    this._qrContainer.style.display = "none";
+
+    if (!this._errorMsg) {
+      this._errorMsg = document.createElement("div");
+      this._errorMsg.className = "render-error";
+      this._container
+        .querySelector(".render-column")
+        .appendChild(this._errorMsg);
+    }
+
+    this._errorMsg.textContent = message;
+    this._errorMsg.style.display = "block";
   }
 }
