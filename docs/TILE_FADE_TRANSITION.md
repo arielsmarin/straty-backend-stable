@@ -1,104 +1,81 @@
-# Tile Fade Transition System
+# LOD Fade Transition System
 
 ## Overview
 
-The Tile Fade Transition system provides smooth visual feedback as panorama tiles load progressively through LOD (Level of Detail) transitions.
+The LOD (Level of Detail) Fade Transition system provides smooth visual feedback as panorama quality improves through progressive loading.
 
 ## Visual Behavior
 
 ### Initial State
-When a scene is first loaded, the panorama begins loading tiles progressively.
+When a scene is first loaded, the panorama begins with desaturated colors (grayscale-like appearance).
 
 ### Progressive Loading
-As tiles load from the backend, each tile fades in individually and asynchronously:
-1. **LOD 0 tiles** (256×256px tiles, 512×512px faces): Initial quality appears
-2. **LOD 1 tiles** (512×512px tiles, 1024×1024px faces): Appears gradually on top of LOD 0
-3. **LOD 2 tiles** (512×512px tiles, 2048×2048px faces): Appears gradually on top of LOD 1
+As higher quality LOD levels load from the backend:
+1. **LOD 0** (256×256px tiles, 512×512px faces): Initial low-quality view appears desaturated
+2. **LOD 1** (512×512px tiles, 1024×1024px faces): Color saturation begins to increase
+3. **LOD 2** (512×512px tiles, 2048×2048px faces): Full color saturation achieved
 
 ### Transition Effect
-- Each tile fades in independently when it loads (400ms duration)
-- Tiles fade asynchronously within their LOD level
-- Smooth ease-out animation for professional appearance
+- Smooth 800ms fade from desaturated to full color
+- Ease-out animation for professional appearance
+- Triggered when LOD 1+ tiles become available
 
 ## Technical Implementation
 
 ### Files Modified
 
-1. **`TileFadeOverlay.js`** (MODIFIED)
-   - Canvas-based overlay system
-   - Tracks tile loading state per face/LOD/position
-   - Each tile fades independently and asynchronously
-   - Manages 60fps fade animations
-
-2. **`ViewerManager.js`** (MODIFIED)
-   - Initializes TileFadeOverlay
-   - Calls `initializeScene()` when loading a new scene
-   - Calls `markTileLoaded()` when tile events arrive from backend
-   - Cleans up overlay on destroy
+1. **`ViewerManager.js`**
+   - Manages LOD fade state
+   - Applies saturation effects to scene layers
+   - Triggers fade-in when higher LOD levels load
 
 ### How It Works
 
-#### 1. Initialization
+#### 1. Initial Desaturation
 ```javascript
-// In ViewerManager.initialize()
-this._tileFadeOverlay = new TileFadeOverlay(container, this._geometry);
+// In ViewerManager._applyDesaturation()
+const sat = ViewerManager.LOD_FADE_INITIAL_SATURATION; // 0.15
+scene.layer().setEffects(this._buildSaturationEffects(sat));
 ```
 
-#### 2. Scene Loading
+This sets the initial saturation to 15% (mostly grayscale).
+
+#### 2. Progressive Fade-In
 ```javascript
-// In ViewerManager.loadScene()
-if (this._tileFadeOverlay) {
-  this._tileFadeOverlay.initializeScene(tiles.build);
-}
+// In ViewerManager._startLodFadeIn()
+// Animates saturation from 0.15 → 1.0 over 800ms
 ```
 
-This sets all tiles to opacity = 1.0 (fully visible).
+When LOD 1+ tiles are detected, saturation gradually increases to 100%.
 
-#### 3. Tile Events
-```javascript
-// In ViewerManager._scheduleTileEventPolling()
-if (this._tileFadeOverlay) {
-  this._tileFadeOverlay.markTileLoaded(face, numLevel, Number(x), Number(y));
-}
-```
-
-Each loaded tile starts its individual fade-out animation.
-
-#### 4. Rendering
-The overlay:
-- Manages tile fade states
-- Each tile fades out independently as it loads
-- Updates at 60fps until all tiles are fully visible
+#### 3. Saturation Matrix
+The `_buildSaturationEffects()` method creates a color matrix that controls RGB channel saturation using luminance weights (0.2126 R, 0.7152 G, 0.0722 B).
 
 ### Fade Duration
 
-- **Per-tile fade**: 400ms (fast enough for responsiveness)
-- **Easing function**: Cubic ease-out (smooth deceleration)
+- **Fade duration**: 800ms (smooth but not too slow)
+- **Easing function**: Ease-out quadratic (smooth deceleration)
 - **Animation**: requestAnimationFrame (60fps)
 
 ## Performance Considerations
 
 ### Optimizations
-- Canvas overlay only renders when tiles are fading (stops when opacity = 0)
-- Each tile rendered individually for precise visual feedback
-- Minimal DOM updates (single canvas element)
-
-### Memory Usage
-- Tracks ~150 tiles maximum (6 faces × 3 LOD levels × 8 tiles per face per LOD)
-- Each tile state: ~100 bytes (key, opacity, timestamp, metadata)
-- Total overhead: ~15KB per scene
+- Single animation frame loop per scene
+- Cleanup on scene destroy
+- Minimal DOM updates (color matrix only)
 
 ### CPU Usage
-- Animation loop active only during fade transitions
-- Typical fade time: 1-2 seconds per scene load
-- Negligible impact once tiles are loaded
+- Animation loop active only during fade transition
+- Typical fade time: 800ms per scene load
+- Negligible impact once fade completes
 
 ## Adjustable Parameters
 
-In `TileFadeOverlay.js`:
+In `ViewerManager.js`:
 
 ```javascript
-static FADE_DURATION = 400;          // Milliseconds per tile fade
+static LOD_FADE_INITIAL_SATURATION = 0.15;  // Initial grayscale amount (0-1)
+// Fade duration: 800ms (in _startLodFadeIn method)
 ```
 
 ## Testing
@@ -117,36 +94,32 @@ http://localhost:8000
 ```
 
 3. **Observe the behavior**:
-   - Initial load: Tiles begin loading
-   - As LOD 0 tiles arrive: Each tile fades in individually and asynchronously
-   - As LOD 1 tiles arrive: Higher quality appears gradually on top
-   - As LOD 2 tiles arrive: Final quality appears gradually
-   - Change material selection: Tiles fade in again
+   - Initial load: Panorama appears mostly grayscale
+   - As LOD 1 tiles arrive: Colors gradually fade in
+   - As LOD 2 tiles arrive: Full saturation achieved
+   - Change material selection: Desaturation resets, then fades in again
 
 ### Expected Behavior
 
 ✅ **Correct**:
-- Each tile fades in independently as it loads
-- Tiles fade asynchronously within each LOD level
-- LOD 0 → LOD 1 → LOD 2 progressive quality improvement
-- Smooth transitions between LOD levels
+- Panorama starts desaturated (grayscale-like)
+- Smooth transition to full color over ~800ms
+- Fade triggered when LOD 1+ tiles are available
 
 ❌ **Issues to watch for**:
 - Choppy animation (check for performance issues)
-- Tiles not fading (check tile event polling)
+- No fade occurring (check that LOD 1+ tiles are loading)
 
 ## Troubleshooting
 
-### Tiles don't fade in
-- Verify tile event polling is working (`/api/render/events`)
-- Check that `markTileLoaded()` is being called
-- Inspect tile state in `this._tiles` Map
-- Check browser console for tile loading errors
+### Colors don't fade in
+- Verify LOD 1+ tiles are loading (check Network tab)
+- Check that `_startLodFadeIn()` is being called
+- Inspect scene layer effects in browser console
 
 ### Performance issues
-- Check canvas size (should match container)
-- Verify animation stops when opacity = 0
-- Look for memory leaks in tile tracking
+- Check animation frame rate
+- Verify fade completes and stops
 
 ## Browser Compatibility
 
@@ -157,7 +130,7 @@ Tested on:
 - ✅ Edge 90+
 
 Requires:
-- Canvas API
+- Marzipano layer effects API
 - requestAnimationFrame
 - ES6 Modules
 - Performance API
@@ -165,6 +138,5 @@ Requires:
 ## Related Documentation
 
 - [TILE_PARAMETERS.md](./TILE_PARAMETERS.md) - Explains `?v=` cache-busting system
-- [ViewerManager.js](../panoconfig360_frontend/js/viewer/ViewerManager.js) - Viewer integration
-- [TileFadeOverlay.js](../panoconfig360_frontend/js/viewer/TileFadeOverlay.js) - Implementation details
+- [ViewerManager.js](../panoconfig360_frontend/js/viewer/ViewerManager.js) - Implementation details
 
