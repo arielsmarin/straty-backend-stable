@@ -4,6 +4,7 @@ pydantic
 httpx
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
+gunicorn 
 pyvips
 requests
 boto3>=1.28.0
