@@ -30,6 +30,34 @@ Este projeto implementa um configurador interativo de ambientes 360° que permit
   - Gestão de clientes, cenas, layers e materiais
   - Exportação de configuração em JSON
 
+## 🚀 Production Deployment
+
+**Complete deployment guide for production environments:**
+
+👉 **[docs/DEPLOYMENT_MASTER.md](docs/DEPLOYMENT_MASTER.md)** - Start here!
+
+**Architecture**: Serverless, globally distributed, cost-optimized
+- **Backend**: Render.com (FastAPI)
+- **Frontend**: Cloudflare Pages (Static)
+- **Storage**: Cloudflare R2 (Zero egress fees)
+- **CDN**: Cloudflare (200+ global POPs)
+
+**Estimated cost**: $8-30/month depending on traffic
+
+**Key features**:
+- ✅ Global CDN with 95%+ cache hit ratio
+- ✅ Auto-scaling backend
+- ✅ Zero-downtime deploys
+- ✅ Production hardening (rate limiting, CORS, security)
+- ✅ Comprehensive monitoring and testing
+
+**Quick links**:
+- [Architecture Overview](docs/DEPLOYMENT_ARCHITECTURE.md)
+- [Backend Setup (Render)](docs/DEPLOYMENT_RENDER.md)
+- [Storage Setup (R2)](docs/DEPLOYMENT_R2.md)
+- [Frontend Setup (Pages)](docs/DEPLOYMENT_CLOUDFLARE_PAGES.md)
+- [Performance Testing](docs/DEPLOYMENT_PERFORMANCE.md)
+
 ## Documentação Técnica
 
 ### 📖 Parâmetros de URL dos Tiles (`?v=`)
