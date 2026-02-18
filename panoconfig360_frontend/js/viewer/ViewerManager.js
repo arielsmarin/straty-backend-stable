@@ -32,11 +32,6 @@ export class ViewerManager {
     this._currentTiles = null;
     this._maxAvailableLod = 0;
 
-    // Ready-tile gating: tracks tiles confirmed available by the backend (via events).
-    // Tiles NOT in this set receive a 1x1 transparent PNG data-URI so Marzipano never fires 404s.
-    this._readyTiles = new Set();
-    this._allTilesReady = false;
-
     // LOD fade transition state
     this._lodFadeAnimId = null;
     this._lodFadeSaturation = 1;
@@ -48,27 +43,6 @@ export class ViewerManager {
 
   _buildTileKey(face, level, x, y) {
     return `${face}:${level}:${x}:${y}`;
-  }
-
-  /**
-   * Pre-populates _readyTiles with every tile at the given LOD.
-   * Called after the backend confirms that an entire LOD level is on disk
-   * (e.g. LOD 0 is fully written before the /api/render response).
-   */
-  _markLodTilesReady(lod) {
-    const level = this._geometryLevels?.[lod];
-    if (!level) return;
-    const tileSize = level.tileSize || 512;
-    const size = level.size || 512;
-    const tilesPerSide = Math.ceil(size / tileSize);
-    const faces = ["f", "b", "l", "r", "u", "d"];
-    for (const face of faces) {
-      for (let y = 0; y < tilesPerSide; y++) {
-        for (let x = 0; x < tilesPerSide; x++) {
-          this._readyTiles.add(this._buildTileKey(face, lod, x, y));
-        }
-      }
-    }
   }
 
   _buildSaturationEffects(sat) {
@@ -197,26 +171,12 @@ export class ViewerManager {
    * Each tile URL includes a ?v=N parameter (revision number) for cache-busting.
    * When higher quality tiles become available, the revision is incremented,
    * forcing the browser to fetch the new version despite HTTP cache headers.
-   *
-   * Ready-tile gating: tiles not yet confirmed by the backend receive a tiny
-   * 1x1 transparent PNG data-URI so the browser never issues a network request that
-   * would result in a 404.  Once an event marks the tile as ready the revision
-   * is bumped and Marzipano re-invokes this callback, now returning the real URL.
    */
   _createFastRetrySource(tiles) {
     const baseUrl = `${tiles.baseUrl}/${tiles.tileRoot}`;
-    // 1x1 transparent PNG as placeholder for tiles not yet ready
-    const placeholderDataUri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
     
     return new Marzipano.ImageUrlSource((tile) => {
-      const key = this._buildTileKey(tile.face, tile.z, tile.x, tile.y);
-
-      // Return placeholder for tiles the backend hasn't finished writing yet
-      if (!this._allTilesReady && !this._readyTiles.has(key)) {
-        return { url: placeholderDataUri };
-      }
-
-      const rev = this._tileRevisionMap.get(key) || 0;
+      const rev = this._tileRevisionMap.get(this._buildTileKey(tile.face, tile.z, tile.x, tile.y)) || 0;
       // The ?v= parameter enables cache-busting: ?v=0 (initial), ?v=1 (updated), etc.
       const url = `${baseUrl}/${tiles.build}_${tile.face}_${tile.z}_${tile.x}_${tile.y}.jpg?v=${rev}`;
       return { url };
@@ -269,7 +229,6 @@ export class ViewerManager {
 
               const [, face, level, x, y] = parts;
               const numLevel = Number(level);
-              this._readyTiles.add(this._buildTileKey(face, numLevel, Number(x), Number(y)));
               this.forceTileRefresh(face, numLevel, Number(x), Number(y));
               
               // Mark tile as loaded in the fade overlay
@@ -388,17 +347,6 @@ export class ViewerManager {
     // Progressive LOD: start with only available levels
     this._currentTiles = tiles;
     this._maxAvailableLod = (status === "generated") ? 0 : 2;
-
-    // Ready-tile gating: decide which tiles are safe to request right now
-    this._readyTiles.clear();
-    if (status === "cached") {
-      // All tiles are on disk already – skip per-tile checks
-      this._allTilesReady = true;
-    } else {
-      this._allTilesReady = false;
-      // LOD 0 tiles were written synchronously before the API responded
-      this._markLodTilesReady(0);
-    }
 
     const levels = this._getGeometryLevelsForLod(this._maxAvailableLod);
     this._geometry = new Marzipano.CubeGeometry(levels);
