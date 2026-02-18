@@ -3,7 +3,7 @@
 .gitignore
 
 # cache
-panoconfig360_cache/clients/monte-negro/scenes/*
+panoconfig360_cache/clients/*/scenes/
 tmp
 *.log
 
