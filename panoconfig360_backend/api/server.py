@@ -266,7 +266,7 @@ def render_cubemap(
         raise HTTPException(404, f"Config não encontrado para cliente '{client_id}'.")
     except ValueError as e:
         logging.warning("❌ Config inválido: %s", e)
-        raise HTTPException(422, f"Config inválido para cliente '{client_id}': {e}")
+        raise HTTPException(422, f"Config inválido para cliente '{client_id}'.")
     except Exception as e:
         logging.exception("❌ Falha ao carregar config")
         raise HTTPException(500, f"Erro ao carregar config: {e}")
@@ -487,7 +487,7 @@ def render_2d(payload: Render2DRequest):
         raise HTTPException(404, f"Config não encontrado para cliente '{client_id}'.")
     except ValueError as e:
         logging.warning("❌ Config inválido: %s", e)
-        raise HTTPException(422, f"Config inválido para cliente '{client_id}': {e}")
+        raise HTTPException(422, f"Config inválido para cliente '{client_id}'.")
     except Exception as e:
         logging.exception("❌ Falha ao carregar config")
         raise HTTPException(500, f"Erro ao carregar config: {e}")

@@ -35,7 +35,7 @@ def get_actual_base() -> int:
 
 def _validate_config(config: dict) -> None:
     if not isinstance(config, dict):
-        raise ValueError("Config inválido: esperado objeto JSON.")
+        raise ValueError("Config inválido: esperado um objeto.")
 
     scenes = config.get("scenes")
     layers = config.get("layers")

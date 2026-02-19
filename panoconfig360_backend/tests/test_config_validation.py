@@ -1,3 +1,4 @@
+import importlib
 import json
 import sys
 import types
@@ -5,11 +6,15 @@ import types
 import pytest
 
 
-def _load_config():
-    sys.modules.setdefault("pyvips", types.SimpleNamespace(Image=object))
-    from panoconfig360_backend.render.dynamic_stack import load_config
+@pytest.fixture
+def load_config(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules, "pyvips", types.SimpleNamespace(Image=object)
+    )
+    from panoconfig360_backend.render import dynamic_stack
 
-    return load_config
+    importlib.reload(dynamic_stack)
+    return dynamic_stack.load_config
 
 
 def _write_config(tmp_path, payload):
@@ -18,16 +23,14 @@ def _write_config(tmp_path, payload):
     return path
 
 
-def test_load_config_requires_scenes_or_layers(tmp_path):
-    load_config = _load_config()
+def test_load_config_requires_scenes_or_layers(tmp_path, load_config):
     config_path = _write_config(tmp_path, {"naming": {"foo": "bar"}})
 
     with pytest.raises(ValueError, match="scenes|layers"):
         load_config(config_path)
 
 
-def test_load_config_with_layers_fallback(tmp_path):
-    load_config = _load_config()
+def test_load_config_with_layers_fallback(tmp_path, load_config):
     config_path = _write_config(tmp_path, {"layers": []})
 
     config, scenes, naming = load_config(config_path)
@@ -37,8 +40,7 @@ def test_load_config_with_layers_fallback(tmp_path):
     assert naming == {}
 
 
-def test_load_config_validates_scene_layers(tmp_path):
-    load_config = _load_config()
+def test_load_config_validates_scene_layers(tmp_path, load_config):
     config_path = _write_config(
         tmp_path,
         {"scenes": {"lobby": {"scene_index": 0, "layers": []}}},
@@ -49,8 +51,7 @@ def test_load_config_validates_scene_layers(tmp_path):
     assert scenes["lobby"]["layers"] == []
 
 
-def test_load_config_rejects_invalid_scene_layers(tmp_path):
-    load_config = _load_config()
+def test_load_config_rejects_invalid_scene_layers(tmp_path, load_config):
     config_path = _write_config(
         tmp_path,
         {"scenes": {"bad": {"layers": "oops"}}},
