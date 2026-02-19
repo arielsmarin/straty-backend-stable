@@ -84,9 +84,11 @@ def resolve_asset(base_path: Path) -> Path:
                 # Create directory if it doesn't exist
                 candidate.parent.mkdir(parents=True, exist_ok=True)
                 
-                # Save the file
+                # Save the file, streaming for large assets
                 with open(candidate, 'wb') as f:
-                    f.write(response.content)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
                 
                 logging.info(f"✅ Downloaded and cached: {candidate}")
                 return candidate

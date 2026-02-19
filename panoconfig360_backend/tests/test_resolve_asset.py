@@ -80,22 +80,18 @@ def test_resolve_asset_not_found(tmp_path):
             resolve_asset(test_base)
 
 
-def test_resolve_asset_url_construction(monkeypatch):
+def test_resolve_asset_url_construction():
     """Test that remote URLs are constructed correctly."""
-    # Set the R2_PUBLIC_URL via environment variable
-    test_url = "https://test.r2.dev"
-    monkeypatch.setenv("R2_PUBLIC_URL", test_url)
-    
-    # Need to reload the module to pick up the new env var
-    import importlib
-    from panoconfig360_backend.render import vips_compat
-    importlib.reload(vips_compat)
-    
+    from panoconfig360_backend.render.vips_compat import construct_r2_url
     from pathlib import Path
+    from unittest.mock import patch
     
-    # Test URL construction
-    base_path = Path("panoconfig360_cache/clients/monte-negro/scenes/kitchen/base_kitchen")
-    remote_url = vips_compat.construct_r2_url(base_path, ".jpg")
+    # Test URL construction with a specific R2_PUBLIC_URL
+    test_url = "https://test.r2.dev"
     
-    expected_url = f"{test_url}/clients/monte-negro/scenes/kitchen/base_kitchen.jpg"
-    assert remote_url == expected_url
+    with patch("panoconfig360_backend.render.vips_compat.R2_PUBLIC_URL", test_url):
+        base_path = Path("panoconfig360_cache/clients/monte-negro/scenes/kitchen/base_kitchen")
+        remote_url = construct_r2_url(base_path, ".jpg")
+        
+        expected_url = f"{test_url}/clients/monte-negro/scenes/kitchen/base_kitchen.jpg"
+        assert remote_url == expected_url
