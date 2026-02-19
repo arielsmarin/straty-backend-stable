@@ -13,10 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from panoconfig360_backend.render.dynamic_stack import (
     load_config,
     build_string_from_selection,
-    encode_index,
 )
 from panoconfig360_backend.render.split_faces_cubemap import process_cubemap
-from panoconfig360_backend.render.stack_2d import render_stack_2d
 from panoconfig360_backend.models.render_2d import Render2DRequest
 from panoconfig360_backend.storage.storage_local import (
     append_jsonl,
@@ -223,10 +221,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # CORS middleware
-cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+_cors_raw = os.getenv("CORS_ORIGINS", "")
+if not _cors_raw:
+    logging.warning(
+        "⚠️ CORS_ORIGINS não configurado. "
+        "Defina CORS_ORIGINS no ambiente para permitir acesso do frontend."
+    )
+cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in cors_origins],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],

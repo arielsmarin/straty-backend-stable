@@ -31,6 +31,10 @@ def validate_safe_id(value: str, field_name: str) -> str:
     """
     Validates that an identifier (client_id, scene_id) is safe for use in
     file paths and URLs. Prevents path traversal attacks.
+
+    Format: lowercase letters (a-z), digits (0-9), and hyphens (-).
+    Length: 1-64 characters. Must not start or end with a hyphen.
+
     Raises HTTP 400 if invalid.
     """
     if not isinstance(value, str) or not value:
