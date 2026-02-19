@@ -6,15 +6,15 @@ import shutil
 import time
 import tempfile
 import threading
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Body, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from panoconfig360_backend.render.dynamic_stack import (
     load_config,
     build_string_from_selection,
-    encode_index,
 )
 from panoconfig360_backend.render.split_faces_cubemap import process_cubemap
-from panoconfig360_backend.render.stack_2d import render_stack_2d
 from panoconfig360_backend.models.render_2d import Render2DRequest
 from panoconfig360_backend.storage.storage_local import (
     append_jsonl,
@@ -28,7 +28,7 @@ from panoconfig360_backend.render.scene_context import resolve_scene_context
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
-from panoconfig360_backend.utils.build_validation import validate_build_string
+from panoconfig360_backend.utils.build_validation import validate_build_string, validate_safe_id
 import re
 
 
@@ -53,7 +53,8 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 last_request_time = 0.0
 lock = threading.Lock()
 MIN_INTERVAL = 1.0
-render_locks: dict[str, threading.Lock] = {}
+MAX_RENDER_LOCKS = 256
+render_locks: OrderedDict[str, threading.Lock] = OrderedDict()
 render_locks_guard = threading.Lock()
 active_background_renders: set[str] = set()
 active_background_guard = threading.Lock()
@@ -61,9 +62,14 @@ active_background_guard = threading.Lock()
 
 def _get_render_lock(render_key: str) -> threading.Lock:
     with render_locks_guard:
-        if render_key not in render_locks:
-            render_locks[render_key] = threading.Lock()
-        return render_locks[render_key]
+        if render_key in render_locks:
+            render_locks.move_to_end(render_key)
+            return render_locks[render_key]
+        new_lock = threading.Lock()
+        render_locks[render_key] = new_lock
+        while len(render_locks) > MAX_RENDER_LOCKS:
+            render_locks.popitem(last=False)
+        return new_lock
 
 
 def _write_metadata_file(metadata_payload: dict, tmp_dir: str) -> str:
@@ -178,14 +184,26 @@ def _render_remaining_lods(
 
 
 def load_client_config(client_id: str):
+    validate_safe_id(client_id, "client_id")
+
     config_path = LOCAL_CACHE_DIR / "clients" / \
         client_id / f"{client_id}_cfg.json"
 
     if not config_path.exists():
+        logging.error("❌ Config não encontrada: %s", config_path)
         raise FileNotFoundError(
             f"Configuração do cliente '{client_id}' não encontrada em {config_path}.")
 
-    project, scenes, naming = load_config(config_path)
+    try:
+        project, scenes, naming = load_config(config_path)
+    except json.JSONDecodeError as e:
+        logging.error("❌ Config JSON inválido para client '%s': %s", client_id, e)
+        raise ValueError(f"Configuração do cliente '{client_id}' contém JSON inválido: {e}")
+
+    if not scenes:
+        logging.error("❌ Config do client '%s' não possui scenes definidas", client_id)
+        raise ValueError(f"Configuração do cliente '{client_id}' não possui scenes definidas")
+
     project["scenes"] = scenes
     project["client_id"] = client_id
 
@@ -201,6 +219,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# CORS middleware
+_cors_raw = os.getenv("CORS_ORIGINS", "")
+if not _cors_raw:
+    logging.warning(
+        "⚠️ CORS_ORIGINS não configurado. "
+        "Defina CORS_ORIGINS no ambiente para permitir acesso do frontend."
+    )
+cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 app.mount("/panoconfig360_cache",
           StaticFiles(directory=LOCAL_CACHE_DIR), name="panoconfig360_cache")
@@ -245,14 +279,23 @@ def render_cubemap(
     if not selection or not isinstance(selection, dict):
         raise HTTPException(400, "selection ausente ou inválida")
 
+    client_id = validate_safe_id(client_id, "client")
+    scene_id = validate_safe_id(scene_id, "scene")
+
     # ======================================================
     # 📦 CARREGA CONFIG
     # ======================================================
     try:
         project, _ = load_client_config(client_id)
+    except FileNotFoundError as e:
+        logging.error("❌ Config não encontrada para client '%s': %s", client_id, e)
+        raise HTTPException(404, f"Configuração do cliente não encontrada: {e}")
+    except ValueError as e:
+        logging.error("❌ Config inválida para client '%s': %s", client_id, e)
+        raise HTTPException(400, f"Configuração do cliente inválida: {e}")
     except Exception as e:
-        logging.exception("❌ Falha ao carregar config")
-        raise HTTPException(500, f"Erro ao carregar config: {e}")
+        logging.exception("❌ Falha inesperada ao carregar config do client '%s'", client_id)
+        raise HTTPException(500, "Erro interno ao carregar configuração")
 
     # ======================================================
     # 🎬 RESOLVE CENA
@@ -457,17 +500,23 @@ def render_tile_events(tile_root: str, cursor: int = 0, limit: int = 200):
 
 @app.post("/api/render2d")
 def render_2d(payload: Render2DRequest):
-    client_id = payload.client
-    scene_id = payload.scene
+    client_id = validate_safe_id(payload.client, "client")
+    scene_id = validate_safe_id(payload.scene, "scene")
     selection = payload.selection
 
     logging.info(f"🖼️ Render 2D: client={client_id}, scene={scene_id}")
 
     try:
         project, _ = load_client_config(client_id)
+    except FileNotFoundError as e:
+        logging.error("❌ Config não encontrada para client '%s': %s", client_id, e)
+        raise HTTPException(404, f"Configuração do cliente não encontrada: {e}")
+    except ValueError as e:
+        logging.error("❌ Config inválida para client '%s': %s", client_id, e)
+        raise HTTPException(400, f"Configuração do cliente inválida: {e}")
     except Exception as e:
-        logging.exception("❌ Falha ao carregar config")
-        raise HTTPException(500, f"Erro ao carregar config: {e}")
+        logging.exception("❌ Falha inesperada ao carregar config do client '%s'", client_id)
+        raise HTTPException(500, "Erro interno ao carregar configuração")
 
     try:
         ctx = resolve_scene_context(project, scene_id)
@@ -531,12 +580,11 @@ def render_2d(payload: Render2DRequest):
         }
 
     except FileNotFoundError as e:
-        logging.error(str(e))
-        return {
-            "status": "error",
-            "type": "missing_asset",
-            "message": str(e),
-        }
+        logging.error("❌ Asset não encontrado no render 2D: %s", e)
+        raise HTTPException(
+            status_code=404,
+            detail=f"Asset não encontrado: {e}",
+        )
 
     except Exception as e:
         logging.exception("❌ Erro inesperado no render 2D")
@@ -565,6 +613,10 @@ def health():
 
 @app.get("/panoconfig360_cache/cubemap/{client_id}/{scene_id}/tiles/{build}/{filename}")
 def get_tile(client_id: str, scene_id: str, build: str, filename: str):
+
+    # valida IDs para prevenir path traversal
+    client_id = validate_safe_id(client_id, "client_id")
+    scene_id = validate_safe_id(scene_id, "scene_id")
 
     # valida build
     build = validate_build_string(build)

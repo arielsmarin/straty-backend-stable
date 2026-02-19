@@ -49,7 +49,7 @@ def test_resolve_asset_remote_fallback(tmp_path, monkeypatch):
     # Mock requests.get to simulate successful download
     mock_response = Mock()
     mock_response.status_code = 200
-    mock_response.content = b"fake downloaded image"
+    mock_response.iter_content = Mock(return_value=[b"fake downloaded image"])
     
     with patch("panoconfig360_backend.render.vips_compat.requests.get", return_value=mock_response) as mock_get:
         result = resolve_asset(test_base)
