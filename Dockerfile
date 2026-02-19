@@ -11,6 +11,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV VIPS_CONCURRENCY=1
+ENV VIPS_CONCURRENCY=0
 
 CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "panoconfig360_backend.api.server:app", "--bind", "0.0.0.0:10000", "--workers", "1", "--threads", "1", "--timeout", "120", "--graceful-timeout", "120"]

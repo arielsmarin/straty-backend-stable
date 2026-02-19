@@ -2,7 +2,7 @@
 import os
 
 # Limit libvips concurrency BEFORE any pyvips import
-os.environ.setdefault("VIPS_CONCURRENCY", "1")
+os.environ.setdefault("VIPS_CONCURRENCY", "0")
 
 import gc
 import json
@@ -111,6 +111,9 @@ def _tiles_base_url() -> str:
     return get_public_url("").rstrip("/")
 
 
+_TILE_WORKERS = int(os.getenv("TILE_WORKERS", "4"))
+
+
 def _render_remaining_lods(
     client_id: str,
     scene_id: str,
@@ -118,6 +121,7 @@ def _render_remaining_lods(
     build_str: str,
     tile_root: str,
     metadata_key: str,
+    stack_img=None,
 ):
     render_key = f"{client_id}:{scene_id}:{build_str}"
 
@@ -125,29 +129,30 @@ def _render_remaining_lods(
         start = time.monotonic()
         logging.info("🧵 Background LOD render iniciado para %s", render_key)
 
-        project, _ = load_client_config(client_id)
-        ctx = resolve_scene_context(project, scene_id)
+        # Reuse the stacked image if provided; otherwise re-stack
+        if stack_img is None:
+            project, _ = load_client_config(client_id)
+            ctx = resolve_scene_context(project, scene_id)
 
-        stack_img = stack_layers_image_only(
-            scene_id=scene_id,
-            layers=ctx["layers"],
-            selection=selection,
-            assets_root=ctx["assets_root"],
+            stack_img = stack_layers_image_only(
+                scene_id=scene_id,
+                layers=ctx["layers"],
+                selection=selection,
+                assets_root=ctx["assets_root"],
+            )
+
+        # Use a single upload queue for all remaining LODs
+        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lods_")
+        uploader = TileUploadQueue(
+            tile_root=tile_root,
+            upload_fn=upload_file,
+            workers=_TILE_WORKERS,
+            on_state_change=_tile_state_event_writer(tile_root, build_str),
         )
+        uploader.start()
 
-        # Process each remaining LOD sequentially (LOD1, LOD2, ...)
-        for lod_level in (1, 2):
-            tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod{lod_level}_")
-            uploader = None
-            try:
-                uploader = TileUploadQueue(
-                    tile_root=tile_root,
-                    upload_fn=upload_file,
-                    workers=1,
-                    on_state_change=_tile_state_event_writer(tile_root, build_str),
-                )
-                uploader.start()
-
+        try:
+            for lod_level in (1, 2):
                 process_cubemap(
                     stack_img,
                     tmp_dir,
@@ -157,7 +162,6 @@ def _render_remaining_lods(
                     max_lod=lod_level,
                     on_tile_ready=uploader.enqueue,
                 )
-                uploader.close_and_wait()
 
                 # Update BUILD_STATUS after each LOD
                 with BUILD_STATUS_LOCK:
@@ -165,19 +169,21 @@ def _render_remaining_lods(
                         BUILD_STATUS[build_str]["lod_ready"] = lod_level
 
                 logging.info(
-                    "✅ LOD%s pronto para %s (%s tiles)",
-                    lod_level, render_key, uploader.uploaded_count,
+                    "✅ LOD%s gerado para %s",
+                    lod_level, render_key,
                 )
-            finally:
-                if uploader is not None:
-                    try:
-                        uploader.close_and_wait()
-                    except Exception:
-                        logging.exception("❌ Erro ao encerrar fila de upload LOD%s (%s)", lod_level, render_key)
-                shutil.rmtree(tmp_dir, ignore_errors=True)
 
-            # Free memory between LOD generations
-            gc.collect()
+            uploader.close_and_wait()
+            logging.info(
+                "✅ Upload concluído para %s (%s tiles)",
+                render_key, uploader.uploaded_count,
+            )
+        finally:
+            try:
+                uploader.close_and_wait()
+            except Exception:
+                logging.exception("❌ Erro ao encerrar fila de upload (%s)", render_key)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # Release the stacked image after all LODs are done
         del stack_img
@@ -410,12 +416,13 @@ def render_cubemap(
         tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod0_")
         logging.info(f"📁 Temp dir: {tmp_dir}")
         uploader = None
+        stack_img_for_bg = None
 
         try:
             uploader = TileUploadQueue(
                 tile_root=tile_root,
                 upload_fn=upload_file,
-                workers=1,
+                workers=_TILE_WORKERS,
                 on_state_change=_tile_state_event_writer(tile_root, build_str),
             )
             uploader.start()
@@ -435,6 +442,8 @@ def render_cubemap(
                 max_lod=0,
                 on_tile_ready=uploader.enqueue,
             )
+            # Keep the stacked image for the background task to avoid re-compositing
+            stack_img_for_bg = stack_img
             del stack_img
             uploader.close_and_wait()
 
@@ -485,6 +494,7 @@ def render_cubemap(
                 build_str,
                 tile_root,
                 metadata_key,
+                stack_img_for_bg,
             )
             active_background_renders.add(render_key)
             logging.info("🧵 Background task agendada para LODs >= 1 (%s)", render_key)
