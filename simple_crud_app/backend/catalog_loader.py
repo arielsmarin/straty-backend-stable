@@ -1,9 +1,15 @@
 import json
+import os
 from pathlib import Path
 from typing import Dict
 
+DEFAULT_CATALOG_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "panoconfig360_cache"
+    / "clients"
+)
 CATALOG_ROOT = Path(
-    r"H:\temp\simulador_totem\panoconfig360_cache\clients"
+    os.getenv("PANOCONFIG360_CATALOG_ROOT") or DEFAULT_CATALOG_ROOT
 )
 
 def load_catalog(tenant_key: str) -> Dict[str, dict]:

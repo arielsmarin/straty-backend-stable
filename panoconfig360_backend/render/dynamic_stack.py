@@ -33,6 +33,54 @@ def get_actual_base() -> int:
     return 36 if CONFIG_STRING_BASE == 336 else CONFIG_STRING_BASE
 
 
+def _validate_config(config: dict) -> None:
+    if not isinstance(config, dict):
+        raise ValueError("Config inválido: esperado objeto JSON.")
+
+    scenes = config.get("scenes")
+    layers = config.get("layers")
+
+    if scenes:
+        if not isinstance(scenes, dict):
+            raise ValueError("Config inválido: 'scenes' deve ser um objeto.")
+
+        for scene_id, scene in scenes.items():
+            if not isinstance(scene, dict):
+                raise ValueError(
+                    f"Config inválido: cena '{scene_id}' deve ser objeto."
+                )
+
+            scene_layers = scene.get("layers")
+            if scene_layers is None:
+                raise ValueError(
+                    f"Config inválido: cena '{scene_id}' sem layers."
+                )
+
+            if not isinstance(scene_layers, list):
+                raise ValueError(
+                    f"Config inválido: layers da cena '{scene_id}' deve ser lista."
+                )
+
+            for layer in scene_layers:
+                if not isinstance(layer, dict) or not layer.get("id"):
+                    raise ValueError(
+                        f"Config inválido: layer inválido na cena '{scene_id}'."
+                    )
+
+                items = layer.get("items", [])
+                if items is not None and not isinstance(items, list):
+                    raise ValueError(
+                        "Config inválido: items do layer "
+                        f"'{layer.get('id', '?')}' deve ser lista."
+                    )
+    elif layers is None:
+        raise ValueError(
+            "Config inválido: 'scenes' ou 'layers' é obrigatório."
+        )
+    elif not isinstance(layers, list):
+        raise ValueError("Config inválido: 'layers' deve ser uma lista.")
+
+
 def load_config(config_path):
     if isinstance(config_path, Path):
         config_path = str(config_path)
@@ -44,7 +92,14 @@ def load_config(config_path):
         raise FileNotFoundError(f"Config não encontrado: {config_path}")
 
     with open(config_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
+        try:
+            config = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Config JSON inválido em {config_path}: {exc}"
+            ) from exc
+
+    _validate_config(config)
 
     scenes = config.get("scenes")
 
