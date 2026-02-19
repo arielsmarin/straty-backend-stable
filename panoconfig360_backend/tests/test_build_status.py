@@ -69,7 +69,7 @@ def test_build_status_thread_safety():
         except Exception as exc:
             errors.append(exc)
 
-    threads = [threading.Thread(target=updater, args=(i,)) for i in range(3)]
+    threads = [threading.Thread(target=updater, args=(i,)) for i in range(1, 4)]
     for t in threads:
         t.start()
     for t in threads:
@@ -77,7 +77,7 @@ def test_build_status_thread_safety():
 
     assert not errors
     with BUILD_STATUS_LOCK:
-        assert BUILD_STATUS[build_id]["lod_ready"] == 2
+        assert BUILD_STATUS[build_id]["lod_ready"] == 3
 
     # cleanup
     with BUILD_STATUS_LOCK:

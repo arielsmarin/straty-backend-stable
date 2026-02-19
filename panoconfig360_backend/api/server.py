@@ -668,7 +668,7 @@ def build_status(build_id: str):
     if entry is not None:
         return entry
     # Build not tracked in memory (e.g. server restart) — return unknown
-    return {"status": "unknown", "lod_ready": -1}
+    return {"status": "unknown", "lod_ready": 0}
 
 
 @app.get("/panoconfig360_cache/cubemap/{client_id}/{scene_id}/tiles/{build}/{filename}")

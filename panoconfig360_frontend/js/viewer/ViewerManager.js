@@ -229,7 +229,7 @@ export class ViewerManager {
           if (st.status === "completed") {
             serverLodReady = 2;
           }
-        } catch (_) { /* best effort */ }
+        } catch (err) { console.warn("[ViewerManager] Status check failed:", err); }
       }
 
       try {
