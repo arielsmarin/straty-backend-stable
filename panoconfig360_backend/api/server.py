@@ -102,6 +102,9 @@ def _tiles_base_url() -> str:
     return get_public_url("").rstrip("/")
 
 
+_TILE_WORKERS = int(os.getenv("TILE_WORKERS", "4"))
+
+
 def _render_remaining_lods(
     client_id: str,
     scene_id: str,
@@ -109,6 +112,7 @@ def _render_remaining_lods(
     build_str: str,
     tile_root: str,
     metadata_key: str,
+    stack_img=None,
 ):
     render_key = f"{client_id}:{scene_id}:{build_str}"
 
@@ -116,8 +120,10 @@ def _render_remaining_lods(
         start = time.monotonic()
         logging.info("🧵 Background LOD render iniciado para %s", render_key)
 
-        project, _ = load_client_config(client_id)
-        ctx = resolve_scene_context(project, scene_id)
+        # Reuse the stacked image if provided; otherwise re-stack
+        if stack_img is None:
+            project, _ = load_client_config(client_id)
+            ctx = resolve_scene_context(project, scene_id)
 
         tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_bg_")
         uploader = None
@@ -382,6 +388,7 @@ def render_cubemap(
         tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod0_")
         logging.info(f"📁 Temp dir: {tmp_dir}")
         uploader = None
+        stack_img_for_bg = None
 
         try:
             uploader = TileUploadQueue(
@@ -407,6 +414,8 @@ def render_cubemap(
                 max_lod=0,
                 on_tile_ready=uploader.enqueue,
             )
+            # Keep the stacked image for the background task to avoid re-compositing
+            stack_img_for_bg = stack_img
             del stack_img
             uploader.close_and_wait()
 
@@ -455,6 +464,7 @@ def render_cubemap(
                 build_str,
                 tile_root,
                 metadata_key,
+                stack_img_for_bg,
             )
             active_background_renders.add(render_key)
             logging.info("🧵 Background task agendada para LODs >= 1 (%s)", render_key)
