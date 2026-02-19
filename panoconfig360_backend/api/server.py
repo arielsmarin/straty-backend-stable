@@ -1,10 +1,5 @@
 # api/server.py
 import os
-
-# Limit libvips concurrency BEFORE any pyvips import
-os.environ.setdefault("VIPS_CONCURRENCY", "0")
-
-import gc
 import json
 import logging
 import shutil
@@ -64,10 +59,6 @@ render_locks: OrderedDict[str, threading.Lock] = OrderedDict()
 render_locks_guard = threading.Lock()
 active_background_renders: set[str] = set()
 active_background_guard = threading.Lock()
-
-# LOD availability tracking per build
-BUILD_STATUS: dict[str, dict] = {}
-BUILD_STATUS_LOCK = threading.Lock()
 
 
 def _get_render_lock(render_key: str) -> threading.Lock:
@@ -134,6 +125,17 @@ def _render_remaining_lods(
             project, _ = load_client_config(client_id)
             ctx = resolve_scene_context(project, scene_id)
 
+        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_bg_")
+        uploader = None
+        try:
+            uploader = TileUploadQueue(
+                tile_root=tile_root,
+                upload_fn=upload_file,
+                workers=4,
+                on_state_change=_tile_state_event_writer(tile_root, build_str),
+            )
+            uploader.start()
+
             stack_img = stack_layers_image_only(
                 scene_id=scene_id,
                 layers=ctx["layers"],
@@ -141,78 +143,48 @@ def _render_remaining_lods(
                 assets_root=ctx["assets_root"],
             )
 
-        # Use a single upload queue for all remaining LODs
-        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lods_")
-        uploader = TileUploadQueue(
-            tile_root=tile_root,
-            upload_fn=upload_file,
-            workers=_TILE_WORKERS,
-            on_state_change=_tile_state_event_writer(tile_root, build_str),
-        )
-        uploader.start()
-
-        try:
-            for lod_level in (1, 2):
-                process_cubemap(
-                    stack_img,
-                    tmp_dir,
-                    tile_size=512,
-                    build=build_str,
-                    min_lod=lod_level,
-                    max_lod=lod_level,
-                    on_tile_ready=uploader.enqueue,
-                )
-
-                # Update BUILD_STATUS after each LOD
-                with BUILD_STATUS_LOCK:
-                    if build_str in BUILD_STATUS:
-                        BUILD_STATUS[build_str]["lod_ready"] = lod_level
-
-                logging.info(
-                    "✅ LOD%s gerado para %s",
-                    lod_level, render_key,
-                )
-
+            process_cubemap(
+                stack_img,
+                tmp_dir,
+                tile_size=512,
+                build=build_str,
+                min_lod=1,
+                on_tile_ready=uploader.enqueue,
+            )
+            del stack_img
             uploader.close_and_wait()
+            uploaded_count = uploader.uploaded_count
+            metadata_payload = {
+                "client": client_id,
+                "scene": scene_id,
+                "build": build_str,
+                "tileRoot": tile_root,
+                "generated_at": int(time.time()),
+                "status": "ready",
+                "last_stage": "background_lods_done",
+                "background_tiles_count": uploaded_count,
+                "tile_state_counts": {
+                    "generated": 0,
+                    "uploading": 0,
+                    "uploaded": 0,
+                    "fading-in": 0,
+                    "visible": len(uploader.states),
+                },
+            }
+            meta_path = _write_metadata_file(metadata_payload, tmp_dir)
+            upload_file(meta_path, metadata_key, "application/json")
             logging.info(
-                "✅ Upload concluído para %s (%s tiles)",
-                render_key, uploader.uploaded_count,
+                "✅ Background LOD render finalizado para %s com %s tiles.",
+                render_key,
+                uploaded_count,
             )
         finally:
-            try:
-                uploader.close_and_wait()
-            except Exception:
-                logging.exception("❌ Erro ao encerrar fila de upload (%s)", render_key)
+            if uploader is not None:
+                try:
+                    uploader.close_and_wait()
+                except Exception:
+                    logging.exception("❌ Erro ao encerrar fila de upload em background (%s)", render_key)
             shutil.rmtree(tmp_dir, ignore_errors=True)
-
-        # Release the stacked image after all LODs are done
-        del stack_img
-        gc.collect()
-
-        # Final metadata update
-        metadata_payload = {
-            "client": client_id,
-            "scene": scene_id,
-            "build": build_str,
-            "tileRoot": tile_root,
-            "generated_at": int(time.time()),
-            "status": "ready",
-            "last_stage": "background_lods_done",
-        }
-        tmp_meta = tempfile.mkdtemp(prefix=f"{build_str}_meta_")
-        try:
-            meta_path = _write_metadata_file(metadata_payload, tmp_meta)
-            upload_file(meta_path, metadata_key, "application/json")
-        finally:
-            shutil.rmtree(tmp_meta, ignore_errors=True)
-
-        # Mark as completed
-        with BUILD_STATUS_LOCK:
-            if build_str in BUILD_STATUS:
-                BUILD_STATUS[build_str]["status"] = "completed"
-                BUILD_STATUS[build_str]["lod_ready"] = 2
-
-        logging.info("✅ Background LOD render finalizado para %s", render_key)
     except Exception:
         logging.exception("❌ Falha na geração de LODs em background para %s", render_key)
     finally:
@@ -422,7 +394,7 @@ def render_cubemap(
             uploader = TileUploadQueue(
                 tile_root=tile_root,
                 upload_fn=upload_file,
-                workers=_TILE_WORKERS,
+                workers=4,
                 on_state_change=_tile_state_event_writer(tile_root, build_str),
             )
             uploader.start()
@@ -457,18 +429,16 @@ def render_cubemap(
                 "status": "processing",
                 "last_stage": "lod0_ready",
                 "lod0_tiles_count": lod0_uploaded,
+                "tile_state_counts": {
+                    "generated": 0,
+                    "uploading": 0,
+                    "uploaded": 0,
+                    "fading-in": 0,
+                    "visible": len(uploader.states),
+                },
             }
             meta_path = _write_metadata_file(metadata_payload, tmp_dir)
             upload_file(meta_path, metadata_key, "application/json")
-
-            # Initialize BUILD_STATUS tracking
-            with BUILD_STATUS_LOCK:
-                BUILD_STATUS[build_str] = {
-                    "status": "processing",
-                    "lod_ready": 0,
-                }
-
-            gc.collect()
 
             elapsed = time.monotonic() - start
             logging.info("✅ LOD0 pronto para %s em %.2fs (%s tiles)", render_key, elapsed, lod0_uploaded)
@@ -668,17 +638,6 @@ def serve_frontend():
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "panoconfig360-backend", "version": "0.0.1"}
-
-
-@app.get("/api/status/{build_id}")
-def build_status(build_id: str):
-    build_id = validate_build_string(build_id)
-    with BUILD_STATUS_LOCK:
-        entry = BUILD_STATUS.get(build_id)
-    if entry is not None:
-        return entry
-    # Build not tracked in memory (e.g. server restart) — return unknown
-    return {"status": "unknown", "lod_ready": 0}
 
 
 @app.get("/panoconfig360_cache/cubemap/{client_id}/{scene_id}/tiles/{build}/{filename}")

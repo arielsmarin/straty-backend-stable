@@ -58,14 +58,8 @@ class TileUploadQueue:
 
             file_path, filename, _lod = item
             try:
-                self._set_state(filename, "uploading")
-                self._emit_state(filename, "uploading", _lod)
                 key = f"{self.tile_root}/{filename}"
                 self.upload_fn(str(file_path), key, "image/jpeg")
-                self._set_state(filename, "uploaded")
-                self._emit_state(filename, "uploaded", _lod)
-                self._set_state(filename, "fading-in")
-                self._emit_state(filename, "fading-in", _lod)
                 self._set_state(filename, "visible")
                 self._emit_state(filename, "visible", _lod)
                 with self._uploaded_count_lock:

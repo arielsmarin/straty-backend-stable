@@ -37,13 +37,13 @@ def test_build_status_lod_ready_update():
     with BUILD_STATUS_LOCK:
         assert BUILD_STATUS[build_id]["lod_ready"] == 1
 
-    # Simulate LOD2 complete
+    # Simulate LOD1 complete
     with BUILD_STATUS_LOCK:
-        BUILD_STATUS[build_id]["lod_ready"] = 2
+        BUILD_STATUS[build_id]["lod_ready"] = 1
         BUILD_STATUS[build_id]["status"] = "completed"
 
     with BUILD_STATUS_LOCK:
-        assert BUILD_STATUS[build_id]["lod_ready"] == 2
+        assert BUILD_STATUS[build_id]["lod_ready"] == 1
         assert BUILD_STATUS[build_id]["status"] == "completed"
 
     # cleanup
