@@ -64,9 +64,10 @@ def test_tile_workers_env_override():
 
 
 def test_vips_concurrency_env_default():
-    """VIPS_CONCURRENCY should default to 0 (auto-detect)."""
+    """VIPS_CONCURRENCY should default to 0 (auto-detect) via setdefault."""
     original = os.environ.pop("VIPS_CONCURRENCY", None)
     try:
+        # This mirrors exactly what server.py does at startup
         os.environ.setdefault("VIPS_CONCURRENCY", "0")
         assert os.environ["VIPS_CONCURRENCY"] == "0"
     finally:
