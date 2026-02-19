@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Callable, Optional
 
 import pyvips
 
@@ -87,7 +88,10 @@ def process_cubemap(
     input_image,
     output_base_dir,
     tile_size=512,
-    build="unknown"
+    build="unknown",
+    max_lod: Optional[int] = None,
+    min_lod: int = 0,
+    on_tile_ready: Optional[Callable[[Path, str, int], None]] = None,
 ):
     output_base_dir = Path(output_base_dir)
     output_base_dir.mkdir(parents=True, exist_ok=True)
@@ -101,11 +105,31 @@ def process_cubemap(
         raise ValueError("Cubemap horizontal inválido")
 
     # LODs EXATOS esperados pelo frontend
+    # Cada entrada é (lod_face_size, lod_tile_size):
+    #   lod0: face=512,  tile=256  -> { tileSize: 256, size: 512, fallbackOnly: true }
+    #   lod1: face=1024, tile=512  -> { tileSize: 512, size: 1024 }
+    #   lod2: face=2048, tile=512  -> { tileSize: 512, size: 2048 }
     lod_sizes = []
-    size = tile_size
+    # lod0: face=tile_size, tile=tile_size//2
+    if tile_size <= face_size:
+        lod_sizes.append((tile_size, tile_size // 2))
+    # lod1+: face dobra a cada nível, tile permanece tile_size
+    size = tile_size * 2
     while size <= face_size:
-        lod_sizes.append(size)
+        lod_sizes.append((size, tile_size))
         size *= 2
+
+    if not lod_sizes:
+        raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
+
+    if min_lod < 0:
+        raise ValueError("min_lod deve ser >= 0")
+
+    final_lod = len(lod_sizes) - 1 if max_lod is None else max_lod
+    if final_lod < min_lod:
+        return
+
+    final_lod = min(final_lod, len(lod_sizes) - 1)
 
     # Extrair faces uma única vez
     faces = []
@@ -126,7 +150,9 @@ def process_cubemap(
         faces.append((face_img, marzipano_face))
 
     # Gerar LOD controlado
-    for lod, target_size in enumerate(lod_sizes):
+    for lod, (target_size, lod_tile_size) in enumerate(lod_sizes):
+        if lod < min_lod or lod > final_lod:
+            continue
 
         scale = target_size / face_size
 
@@ -140,10 +166,11 @@ def process_cubemap(
 
                 resized.dzsave(
                     dz_prefix,
-                    tile_size=tile_size,
+                    tile_size=lod_tile_size,
                     overlap=0,
                     depth="one",
-                    suffix=".jpg[Q=80]",
+                    # progressive JPEG ajuda o tile a surgir de forma gradual no decode
+                    suffix=".jpg[Q=80,interlace=true,optimize_coding=true]",
                     container="fs",
                 )
 
@@ -162,6 +189,10 @@ def process_cubemap(
                         str(tile),
                         str(output_base_dir / filename)
                     )
+
+                    if on_tile_ready is not None:
+                        on_tile_ready(output_base_dir /
+                                      filename, filename, lod)
 
 
 """ def process_cubemap(

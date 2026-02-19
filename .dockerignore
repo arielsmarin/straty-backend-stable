@@ -1,0 +1,29 @@
+# git
+.git
+.gitignore
+
+# cache
+panoconfig360_cache/clients/*/scenes/
+tmp
+*.log
+
+# imagens grandes
+*.png
+*.jpg
+*.jpeg
+*.tiff
+*.psd
+
+# node
+node_modules
+dist
+build
+
+# python
+__pycache__
+*.pyc
+.venv
+env
+
+# docs
+*.md

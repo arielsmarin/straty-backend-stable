@@ -32,8 +32,6 @@ export const CAMERA_POIS = {
 };
 
 export function CreateCameraController(view) {
-  console.log("[CameraController] Módulo carregado");
-
   let currentAnimation = null;
 
   const PITCH_MIN = -Math.PI / 2 + 0.1;
@@ -51,21 +49,6 @@ export function CreateCameraController(view) {
   view.setFov = (fov) => {
     originalSetFov(clampFov(fov));
   };
-
-  function getState() {
-    return {
-      yaw: view.yaw(),
-      pitch: view.pitch(),
-      fov: view.fov(),
-    };
-  }
-
-  function restore(state) {
-    if (!state) return;
-    view.setYaw(state.yaw);
-    view.setPitch(state.pitch);
-    view.setFov(state.fov);
-  }
 
   function shortestAngleDifference(a, b) {
     let diff = b - a;
@@ -138,5 +121,5 @@ export function CreateCameraController(view) {
   // Corrige FOV inicial
   view.setFov(FOV_MAX);
 
-  return { focusOn, getState, restore };
+  return { focusOn };
 }
