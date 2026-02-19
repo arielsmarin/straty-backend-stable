@@ -78,7 +78,7 @@ def resolve_asset(base_path: Path) -> Path:
         
         try:
             logging.info(f"📥 Attempting to download: {remote_url}")
-            response = requests.get(remote_url, timeout=30)
+            response = requests.get(remote_url, timeout=30, stream=True)
             
             if response.status_code == 200:
                 # Create directory if it doesn't exist
