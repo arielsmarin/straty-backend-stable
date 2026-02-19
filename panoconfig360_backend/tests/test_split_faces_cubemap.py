@@ -65,13 +65,20 @@ def test_configure_pyvips_concurrency_uses_vips_lib_api(monkeypatch):
 
 def test_configure_pyvips_concurrency_falls_back_to_env(monkeypatch, caplog):
     monkeypatch.setitem(sys.modules, "pyvips", types.SimpleNamespace(Image=object, __version__="2.2.0"))
+    original = os.environ.get("VIPS_CONCURRENCY")
     monkeypatch.delenv("VIPS_CONCURRENCY", raising=False)
 
     from panoconfig360_backend.render import split_faces_cubemap
 
     importlib.reload(split_faces_cubemap)
-    with caplog.at_level(logging.WARNING):
-        split_faces_cubemap._configure_pyvips_concurrency(1)
+    try:
+        with caplog.at_level(logging.WARNING):
+            split_faces_cubemap._configure_pyvips_concurrency(1)
 
-    assert os.environ["VIPS_CONCURRENCY"] == "1"
-    assert "Pyvips concurrency API unavailable" in caplog.text
+        assert os.environ["VIPS_CONCURRENCY"] == "1"
+        assert "Pyvips concurrency API unavailable" in caplog.text
+    finally:
+        if original is None:
+            os.environ.pop("VIPS_CONCURRENCY", None)
+        else:
+            os.environ["VIPS_CONCURRENCY"] = original
