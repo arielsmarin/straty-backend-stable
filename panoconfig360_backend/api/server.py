@@ -16,12 +16,13 @@ from panoconfig360_backend.render.dynamic_stack import (
 from panoconfig360_backend.render.split_faces_cubemap import process_cubemap
 from panoconfig360_backend.render.stack_2d import render_stack_2d
 from panoconfig360_backend.models.render_2d import Render2DRequest
-from panoconfig360_backend.storage.storage_local import (
+from panoconfig360_backend.storage.factory import (
     append_jsonl,
     exists,
     get_json,
     read_jsonl_slice,
     upload_file,
+    get_public_url,
 )
 from panoconfig360_backend.storage.tile_upload_queue import TileUploadQueue
 from panoconfig360_backend.render.scene_context import resolve_scene_context
@@ -89,6 +90,10 @@ def _tile_state_event_writer(tile_root: str, build_str: str):
         )
 
     return _writer
+
+
+def _tiles_base_url() -> str:
+    return get_public_url("").rstrip("/")
 
 
 def _render_remaining_lods(
@@ -185,7 +190,13 @@ def load_client_config(client_id: str):
         raise FileNotFoundError(
             f"Configuração do cliente '{client_id}' não encontrada em {config_path}.")
 
-    project, scenes, naming = load_config(config_path)
+    try:
+        project, scenes, naming = load_config(config_path)
+    except ValueError as exc:
+        raise ValueError(
+            f"Configuração inválida para cliente '{client_id}': {exc}"
+        ) from exc
+
     project["scenes"] = scenes
     project["client_id"] = client_id
 
@@ -250,6 +261,12 @@ def render_cubemap(
     # ======================================================
     try:
         project, _ = load_client_config(client_id)
+    except FileNotFoundError as e:
+        logging.warning("❌ Config não encontrado: %s", e)
+        raise HTTPException(404, f"Config não encontrado para cliente '{client_id}'.")
+    except ValueError as e:
+        logging.warning("❌ Config inválido: %s", e)
+        raise HTTPException(422, f"Config inválido para cliente '{client_id}'.")
     except Exception as e:
         logging.exception("❌ Falha ao carregar config")
         raise HTTPException(500, f"Erro ao carregar config: {e}")
@@ -290,7 +307,7 @@ def render_cubemap(
         logging.info(f"✅ Cache hit: {build_str}")
 
         tiles = {
-            "baseUrl": "/panoconfig360_cache",
+            "baseUrl": _tiles_base_url(),
             "tileRoot": tile_root,
             "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
             "build": build_str,
@@ -309,7 +326,7 @@ def render_cubemap(
     with render_lock:
         if exists(metadata_key):
             tiles = {
-                "baseUrl": "/panoconfig360_cache",
+                "baseUrl": _tiles_base_url(),
                 "tileRoot": tile_root,
                 "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
                 "build": build_str,
@@ -403,7 +420,7 @@ def render_cubemap(
             logging.info("🧵 Background task agendada para LODs >= 1 (%s)", render_key)
 
     tiles = {
-        "baseUrl": "/panoconfig360_cache",
+        "baseUrl": _tiles_base_url(),
         "tileRoot": tile_root,
         "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
         "build": build_str,
@@ -465,6 +482,12 @@ def render_2d(payload: Render2DRequest):
 
     try:
         project, _ = load_client_config(client_id)
+    except FileNotFoundError as e:
+        logging.warning("❌ Config não encontrado: %s", e)
+        raise HTTPException(404, f"Config não encontrado para cliente '{client_id}'.")
+    except ValueError as e:
+        logging.warning("❌ Config inválido: %s", e)
+        raise HTTPException(422, f"Config inválido para cliente '{client_id}'.")
     except Exception as e:
         logging.exception("❌ Falha ao carregar config")
         raise HTTPException(500, f"Erro ao carregar config: {e}")
@@ -496,7 +519,7 @@ def render_2d(payload: Render2DRequest):
             "client": client_id,
             "scene": scene_id,
             "build": build_str,
-            "url": f"/panoconfig360_cache/{cdn_key}"
+            "url": get_public_url(cdn_key),
         }
 
     # 🏗️ PROCESSA IMAGEM 2D (USANDO STACK COM MASKS)
@@ -527,7 +550,7 @@ def render_2d(payload: Render2DRequest):
             "client": client_id,
             "scene": scene_id,
             "build": build_str,
-            "url": f"/panoconfig360_cache/{cdn_key}",
+            "url": get_public_url(cdn_key),
         }
 
     except FileNotFoundError as e:
