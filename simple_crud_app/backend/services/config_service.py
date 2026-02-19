@@ -366,7 +366,7 @@ class ConfigService:
                 viewer=schemas.ViewerConfig(
                     type="pano_cubic",
                     tileSize=512,
-                    cubeSize=2048,
+                    cubeSize=1024,
                     defaultFov=1.5708,
                     camera_rotation_max=1.5708,
                     camera_rotation_min=-1.57,
