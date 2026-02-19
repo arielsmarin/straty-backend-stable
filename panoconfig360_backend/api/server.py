@@ -1,9 +1,6 @@
 # api/server.py
 import os
 
-# Limit libvips concurrency BEFORE any pyvips import
-os.environ.setdefault("VIPS_CONCURRENCY", "1")
-
 import gc
 import json
 import logging
@@ -135,49 +132,47 @@ def _render_remaining_lods(
             assets_root=ctx["assets_root"],
         )
 
-        # Process each remaining LOD sequentially (LOD1, LOD2, ...)
-        for lod_level in (1, 2):
-            tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod{lod_level}_")
-            uploader = None
-            try:
-                uploader = TileUploadQueue(
-                    tile_root=tile_root,
-                    upload_fn=upload_file,
-                    workers=1,
-                    on_state_change=_tile_state_event_writer(tile_root, build_str),
-                )
-                uploader.start()
+        # Process LOD1 only — LOD2 is not needed per spec
+        lod_level = 1
+        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod{lod_level}_")
+        uploader = None
+        try:
+            uploader = TileUploadQueue(
+                tile_root=tile_root,
+                upload_fn=upload_file,
+                workers=4,
+                on_state_change=_tile_state_event_writer(tile_root, build_str),
+            )
+            uploader.start()
 
-                process_cubemap(
-                    stack_img,
-                    tmp_dir,
-                    tile_size=512,
-                    build=build_str,
-                    min_lod=lod_level,
-                    max_lod=lod_level,
-                    on_tile_ready=uploader.enqueue,
-                )
-                uploader.close_and_wait()
+            process_cubemap(
+                stack_img,
+                tmp_dir,
+                tile_size=512,
+                build=build_str,
+                min_lod=lod_level,
+                max_lod=lod_level,
+                on_tile_ready=uploader.enqueue,
+            )
+            uploader.close_and_wait()
 
-                # Update BUILD_STATUS after each LOD
-                with BUILD_STATUS_LOCK:
-                    if build_str in BUILD_STATUS:
-                        BUILD_STATUS[build_str]["lod_ready"] = lod_level
+            with BUILD_STATUS_LOCK:
+                if build_str in BUILD_STATUS:
+                    BUILD_STATUS[build_str]["lod_ready"] = lod_level
 
-                logging.info(
-                    "✅ LOD%s pronto para %s (%s tiles)",
-                    lod_level, render_key, uploader.uploaded_count,
-                )
-            finally:
-                if uploader is not None:
-                    try:
-                        uploader.close_and_wait()
-                    except Exception:
-                        logging.exception("❌ Erro ao encerrar fila de upload LOD%s (%s)", lod_level, render_key)
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+            logging.info(
+                "✅ LOD%s pronto para %s (%s tiles)",
+                lod_level, render_key, uploader.uploaded_count,
+            )
+        finally:
+            if uploader is not None:
+                try:
+                    uploader.close_and_wait()
+                except Exception:
+                    logging.exception("❌ Erro ao encerrar fila de upload LOD%s (%s)", lod_level, render_key)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
-            # Free memory between LOD generations
-            gc.collect()
+        gc.collect()
 
         # Release the stacked image after all LODs are done
         del stack_img
@@ -204,7 +199,7 @@ def _render_remaining_lods(
         with BUILD_STATUS_LOCK:
             if build_str in BUILD_STATUS:
                 BUILD_STATUS[build_str]["status"] = "completed"
-                BUILD_STATUS[build_str]["lod_ready"] = 2
+                BUILD_STATUS[build_str]["lod_ready"] = 1
 
         logging.info("✅ Background LOD render finalizado para %s", render_key)
     except Exception:
@@ -415,7 +410,7 @@ def render_cubemap(
             uploader = TileUploadQueue(
                 tile_root=tile_root,
                 upload_fn=upload_file,
-                workers=1,
+                workers=4,
                 on_state_change=_tile_state_event_writer(tile_root, build_str),
             )
             uploader.start()
