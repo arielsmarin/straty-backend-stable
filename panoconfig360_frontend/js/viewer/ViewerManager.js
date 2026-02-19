@@ -195,16 +195,42 @@ export class ViewerManager {
    * This function polls /api/render/events to detect when new high-quality tiles are ready
    * and triggers forceTileRefresh() to update them in the viewer.
    * 
-   * Polling frequency: 150ms
+   * Also polls /api/status/{build_id} to check LOD availability before upgrading.
+   *
+   * Polling frequency: 150ms for events, exponential backoff for status
    * Stops when: render is complete AND all events have been processed
    */
-  _scheduleTileEventPolling(tiles) {
+  _scheduleTileEventPolling(tiles, renderService) {
     this._stopTileEventPolling();
     this._tileEventCursor = 0;
     this._tileEventBuild = tiles.build;
+    this._renderService = renderService || this._renderService;
+
+    let statusDelay = 1000;
+    const maxStatusDelay = 10000;
+    let lastStatusCheck = 0;
+    let serverLodReady = 0;
 
     const poll = async () => {
       if (this._tileEventBuild !== tiles.build) return;
+
+      // Periodically check build status for LOD readiness
+      const now = Date.now();
+      if (this._renderService && now - lastStatusCheck >= statusDelay) {
+        lastStatusCheck = now;
+        try {
+          const st = await this._renderService.fetchBuildStatus(tiles.build);
+          if (typeof st.lod_ready === "number" && st.lod_ready > serverLodReady) {
+            serverLodReady = st.lod_ready;
+            statusDelay = 1000; // reset backoff on progress
+          } else {
+            statusDelay = Math.min(statusDelay * 2, maxStatusDelay);
+          }
+          if (st.status === "completed") {
+            serverLodReady = 2;
+          }
+        } catch (_) { /* best effort */ }
+      }
 
       try {
         const url = `/api/render/events?tile_root=${encodeURIComponent(tiles.tileRoot)}&cursor=${this._tileEventCursor}&limit=300`;
@@ -229,11 +255,12 @@ export class ViewerManager {
               
               if (numLevel > maxLodSeen) maxLodSeen = numLevel;
             }
-            // Progressive LOD: upgrade geometry when higher LODs become available
-            if (maxLodSeen > this._maxAvailableLod) {
-              this._upgradeToLod(maxLodSeen);
+            // Progressive LOD: only upgrade geometry when server confirms LOD is ready
+            const safeLod = Math.min(maxLodSeen, serverLodReady);
+            if (safeLod > this._maxAvailableLod) {
+              this._upgradeToLod(safeLod);
             }
-            if (maxLodSeen >= 1) {
+            if (safeLod >= 1) {
               if (this._currentScene) {
                 this._startLodFadeIn(this._currentScene);
               }
@@ -326,7 +353,7 @@ export class ViewerManager {
     return this._viewer;
   }
 
-  async loadScene(tiles, status) {
+  async loadScene(tiles, status, renderService) {
     if (!this._viewer) throw new Error("Viewer não inicializado");
 
     const token = Symbol("scene");
@@ -364,7 +391,7 @@ export class ViewerManager {
         this._viewer?.updateSize();
       });
 
-      this._scheduleTileEventPolling(tiles);
+      this._scheduleTileEventPolling(tiles, renderService);
 
       if (this._viewerConfig.devPOVCapture && !this._disablePOVCapture) {
         requestAnimationFrame(() => {
@@ -392,7 +419,7 @@ export class ViewerManager {
     const oldScene = this._currentScene;
     this._currentScene = newScene;
     this._currentBuild = tiles.build;
-    this._scheduleTileEventPolling(tiles);
+    this._scheduleTileEventPolling(tiles, renderService);
 
     setTimeout(() => {
       try {

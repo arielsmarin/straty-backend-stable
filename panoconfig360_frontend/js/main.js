@@ -127,7 +127,7 @@ async function loadCurrentScene() {
 
     if (!result?.tiles) return;
 
-    await viewerManager.loadScene(result.tiles, result.status);
+    await viewerManager.loadScene(result.tiles, result.status, renderService);
     updateUrl(result.build);
   } catch (err) {
     // ignora abort silenciosamente

@@ -75,6 +75,13 @@ class TileUploadQueue:
                     self._errors.append(exc)
                 logging.exception("❌ Falha no upload do tile %s", filename)
             finally:
+                # Delete local temp file immediately after upload to free disk
+                try:
+                    fp = Path(file_path) if not isinstance(file_path, Path) else file_path
+                    if fp.exists():
+                        fp.unlink()
+                except OSError:
+                    pass
                 self._queue.task_done()
 
     def start(self):

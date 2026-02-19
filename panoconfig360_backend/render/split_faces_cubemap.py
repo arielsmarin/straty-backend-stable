@@ -1,4 +1,5 @@
 import os
+import gc
 import shutil
 import tempfile
 from pathlib import Path
@@ -193,6 +194,11 @@ def process_cubemap(
                     if on_tile_ready is not None:
                         on_tile_ready(output_base_dir /
                                       filename, filename, lod)
+
+            del resized
+
+        # Free memory after each LOD level
+        gc.collect()
 
 
 """ def process_cubemap(
