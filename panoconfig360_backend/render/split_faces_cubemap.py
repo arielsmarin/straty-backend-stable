@@ -33,6 +33,10 @@ def normalize_to_horizontal_cubemap(img):
     return _to_vips_image(img).flip("horizontal")
 
 
+def _resize_face_for_lod(face_img: pyvips.Image, scale: float) -> pyvips.Image:
+    return face_img.resize(scale, kernel="linear")
+
+
 def split_faces_from_image(cubemap_img, output_base_dir: str, tile_size: int, level: int, build: str):
     output_base_dir = str(output_base_dir)
 
@@ -159,7 +163,7 @@ def process_cubemap(
 
         for face_img, marzipano_face in faces:
 
-            resized = face_img.resize(scale)
+            resized = _resize_face_for_lod(face_img, scale)
 
             with tempfile.TemporaryDirectory() as tmp_dir:
 
