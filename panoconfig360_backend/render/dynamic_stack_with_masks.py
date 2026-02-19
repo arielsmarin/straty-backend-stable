@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from panoconfig360_backend.render.vips_compat import resolve_asset, R2_PUBLIC_URL
+from panoconfig360_backend.render.vips_compat import resolve_asset, construct_r2_url
 
 import pyvips
 
@@ -154,8 +154,7 @@ def stack_layers_image_only(
         base_path = resolve_asset(base_base)
     except FileNotFoundError as e:
         # Construct expected remote URL for debugging
-        relative_path = str(base_base).replace("panoconfig360_cache/", "", 1) if str(base_base).startswith("panoconfig360_cache/") else str(base_base)
-        remote_example = f"{R2_PUBLIC_URL}/{relative_path}.jpg"
+        remote_example = construct_r2_url(base_base, ".jpg")
         
         raise FileNotFoundError(
             "❌ Base 2D não encontrada\n"

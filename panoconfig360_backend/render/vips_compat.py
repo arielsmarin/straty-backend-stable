@@ -12,6 +12,29 @@ SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg")
 # Remote asset configuration
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "https://pub-4503b4acd02140cfb69ab3886530d45b.r2.dev")
 
+
+def construct_r2_url(asset_path: Path, extension: str) -> str:
+    """
+    Construct R2 public URL for an asset.
+    
+    Args:
+        asset_path: Base path without extension (e.g., 'panoconfig360_cache/clients/monte-negro/scenes/kitchen/base_kitchen')
+        extension: File extension including dot (e.g., '.jpg')
+    
+    Returns:
+        Full R2 public URL
+    """
+    candidate = asset_path.with_suffix(extension)
+    relative_path = str(candidate)
+    
+    # Strip 'panoconfig360_cache/' prefix to get the R2 key
+    if relative_path.startswith("panoconfig360_cache/"):
+        r2_key = relative_path.replace("panoconfig360_cache/", "", 1)
+    else:
+        r2_key = relative_path
+    
+    return f"{R2_PUBLIC_URL}/{r2_key}"
+
 class VipsImageCompat:
     def __init__(self, image: pyvips.Image):
         self.image = image
@@ -51,15 +74,7 @@ def resolve_asset(base_path: Path) -> Path:
     
     for ext in SUPPORTED_EXTENSIONS:
         candidate = base_path.with_suffix(ext)
-        # Construct remote URL - base_path is relative like 'panoconfig360_cache/clients/...'
-        # We need to strip 'panoconfig360_cache/' prefix to get the R2 key
-        relative_path = str(candidate)
-        if relative_path.startswith("panoconfig360_cache/"):
-            r2_key = relative_path.replace("panoconfig360_cache/", "", 1)
-        else:
-            r2_key = relative_path
-        
-        remote_url = f"{R2_PUBLIC_URL}/{r2_key}"
+        remote_url = construct_r2_url(base_path, ext)
         
         try:
             logging.info(f"📥 Attempting to download: {remote_url}")
