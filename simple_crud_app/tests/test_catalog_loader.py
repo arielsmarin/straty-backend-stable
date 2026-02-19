@@ -18,8 +18,8 @@ def test_load_catalog_uses_env_root(tmp_path, monkeypatch):
 
     from simple_crud_app.backend import catalog_loader
 
-    catalog_loader = importlib.reload(catalog_loader)
+    reloaded_catalog_loader = importlib.reload(catalog_loader)
 
-    result = catalog_loader.load_catalog(tenant_key)
+    result = reloaded_catalog_loader.load_catalog(tenant_key)
 
     assert "mat-01" in result
