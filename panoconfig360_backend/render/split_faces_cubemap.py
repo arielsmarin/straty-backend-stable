@@ -2,6 +2,7 @@ import os
 import gc
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -72,12 +73,12 @@ def _generate_tiles(face_img: pyvips.Image, out_dir: str, face: str, tile_size: 
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         dz_prefix = str(Path(tmp_dir) / "face")
-        ensure_rgb8(face_img).copy().dzsave(
+        ensure_rgb8(face_img).dzsave(
             dz_prefix,
             tile_size=tile_size,
             overlap=0,
             depth="one",
-            suffix=".jpg[Q=80]",
+            suffix=".jpg[Q=70,strip=true]",
             container="fs",
         )
 
@@ -161,7 +162,8 @@ def process_cubemap(
 
         scale = target_size / face_size
 
-        for face_img, marzipano_face in faces:
+        def _process_face(face_data, _scale=scale, _lod=lod, _lod_tile_size=lod_tile_size):
+            face_img, marzipano_face = face_data
 
             resized = _resize_face_for_lod(face_img, scale)
 
@@ -171,11 +173,10 @@ def process_cubemap(
 
                 resized.dzsave(
                     dz_prefix,
-                    tile_size=lod_tile_size,
+                    tile_size=_lod_tile_size,
                     overlap=0,
                     depth="one",
-                    # progressive JPEG ajuda o tile a surgir de forma gradual no decode
-                    suffix=".jpg[Q=80,interlace=true,optimize_coding=true]",
+                    suffix=".jpg[Q=70,strip=true]",
                     container="fs",
                 )
 
@@ -187,7 +188,7 @@ def process_cubemap(
 
                     filename = (
                         f"{build}_{marzipano_face}_"
-                        f"{lod}_{x_str}_{y_str}.jpg"
+                        f"{_lod}_{x_str}_{y_str}.jpg"
                     )
 
                     shutil.move(
@@ -197,9 +198,13 @@ def process_cubemap(
 
                     if on_tile_ready is not None:
                         on_tile_ready(output_base_dir /
-                                      filename, filename, lod)
+                                      filename, filename, _lod)
 
             del resized
+
+        # Process faces concurrently — libvips releases the GIL
+        with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 2)) as pool:
+            list(pool.map(_process_face, faces))
 
         # Free memory after each LOD level
         gc.collect()
