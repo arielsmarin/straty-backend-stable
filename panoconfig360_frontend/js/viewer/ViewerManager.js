@@ -26,6 +26,8 @@ export class ViewerManager {
     this._tileEventPollTimer = null;
     this._tileEventCursor = 0;
     this._tileEventBuild = null;
+    this._tileFailureCount = new Map();
+    this._fallbackTileDataUrl = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
 
     // Progressive LOD: tracks which LOD levels are available and current tiles info
     this._currentTiles = null;
@@ -159,6 +161,7 @@ export class ViewerManager {
     const key = this._buildTileKey(face, level, x, y);
     const current = this._tileRevisionMap.get(key) || 0;
     this._tileRevisionMap.set(key, current + 1);
+    this._tileFailureCount.delete(key);
     this._viewer?.updateSize();
   }
 
@@ -170,9 +173,13 @@ export class ViewerManager {
    */
   _createFastRetrySource(tiles) {
     const baseUrl = `${tiles.baseUrl}/${tiles.tileRoot}`;
-    
-    return new Marzipano.ImageUrlSource((tile) => {
-      const rev = this._tileRevisionMap.get(this._buildTileKey(tile.face, tile.z, tile.x, tile.y)) || 0;
+
+    const source = new Marzipano.ImageUrlSource((tile) => {
+      const key = this._buildTileKey(tile.face, tile.z, tile.x, tile.y);
+      if ((this._tileFailureCount.get(key) || 0) >= 3) {
+        return { url: this._fallbackTileDataUrl };
+      }
+      const rev = this._tileRevisionMap.get(key) || 0;
       // The ?v= parameter enables cache-busting: ?v=0 (initial), ?v=1 (updated), etc.
       const url = `${baseUrl}/${tiles.build}_${tile.face}_${tile.z}_${tile.x}_${tile.y}.jpg?v=${rev}`;
       return { url };
@@ -180,6 +187,17 @@ export class ViewerManager {
       retryDelay: 150,
       concurrency: 8,
     });
+
+    if (typeof source.addEventListener === "function") {
+      // Marzipano ImageUrlSource is an event emitter in current builds.
+      // Keep guard for compatibility with vendor updates/minified variants.
+      source.addEventListener("networkError", (_error, tile) => {
+        const key = this._buildTileKey(tile.face, tile.z, tile.x, tile.y);
+        this._tileFailureCount.set(key, (this._tileFailureCount.get(key) || 0) + 1);
+      });
+    }
+
+    return source;
   }
 
   _stopTileEventPolling() {
@@ -191,7 +209,7 @@ export class ViewerManager {
 
   /**
    * Schedules periodic polling of tile events from the backend.
-   * The backend generates tiles progressively (LOD 0/1 first, then LOD 2+ in background).
+   * The backend generates tiles progressively (LOD 0 first, then LOD 1 in background).
    * This function polls /api/render/events to detect when new high-quality tiles are ready
    * and triggers forceTileRefresh() to update them in the viewer.
    * 
@@ -227,7 +245,7 @@ export class ViewerManager {
             statusDelay = Math.min(statusDelay * 2, maxStatusDelay);
           }
           if (st.status === "completed") {
-            serverLodReady = 2;
+            serverLodReady = 1;
           }
         } catch (err) { console.warn("[ViewerManager] Status check failed:", err); }
       }
@@ -328,7 +346,6 @@ export class ViewerManager {
     this._geometryLevels = [
       { tileSize: 256, size: 512, fallbackOnly: false },
       { tileSize: 512, size: 1024 },
-      { tileSize: 512, size: 2048 },
     ];
     // Initial geometry with all levels (will be overridden by loadScene with progressive subset)
     this._geometry = new Marzipano.CubeGeometry(this._geometryLevels);
@@ -361,7 +378,7 @@ export class ViewerManager {
 
     // Progressive LOD: start with only available levels
     this._currentTiles = tiles;
-    this._maxAvailableLod = (status === "generated") ? 0 : 2;
+    this._maxAvailableLod = (status === "generated") ? 0 : 1;
 
     const levels = this._getGeometryLevelsForLod(this._maxAvailableLod);
     this._geometry = new Marzipano.CubeGeometry(levels);

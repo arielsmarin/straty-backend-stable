@@ -94,6 +94,7 @@ def process_cubemap(
     min_lod: int = 0,
     on_tile_ready: Optional[Callable[[Path, str, int], None]] = None,
 ):
+    pyvips.concurrency_set(1)
     output_base_dir = Path(output_base_dir)
     output_base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,16 +110,13 @@ def process_cubemap(
     # Cada entrada é (lod_face_size, lod_tile_size):
     #   lod0: face=512,  tile=256  -> { tileSize: 256, size: 512, fallbackOnly: true }
     #   lod1: face=1024, tile=512  -> { tileSize: 512, size: 1024 }
-    #   lod2: face=2048, tile=512  -> { tileSize: 512, size: 2048 }
     lod_sizes = []
     # lod0: face=tile_size, tile=tile_size//2
     if tile_size <= face_size:
         lod_sizes.append((tile_size, tile_size // 2))
-    # lod1+: face dobra a cada nível, tile permanece tile_size
-    size = tile_size * 2
-    while size <= face_size:
-        lod_sizes.append((size, tile_size))
-        size *= 2
+    # lod1: face dobra uma vez, tile permanece tile_size
+    if tile_size * 2 <= face_size:
+        lod_sizes.append((tile_size * 2, tile_size))
 
     if not lod_sizes:
         raise ValueError("Nenhum LOD válido foi calculado para o cubemap")

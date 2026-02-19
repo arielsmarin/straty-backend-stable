@@ -57,6 +57,17 @@ last_request_time = 0.0
 lock = threading.Lock()
 MIN_INTERVAL = 1.0
 MAX_RENDER_LOCKS = 256
+
+
+def _pipeline_threads() -> int:
+    try:
+        requested = int(os.getenv("TEST_MODE_THREADS", "1"))
+    except ValueError:
+        requested = 1
+    return max(1, min(requested, 2))
+
+
+PIPELINE_THREADS = _pipeline_threads()
 render_locks: OrderedDict[str, threading.Lock] = OrderedDict()
 render_locks_guard = threading.Lock()
 active_background_renders: set[str] = set()
@@ -187,6 +198,7 @@ def _render_remaining_lods(
             "generated_at": int(time.time()),
             "status": "ready",
             "last_stage": "background_lods_done",
+            "lod_levels": [0, 1],
         }
         tmp_meta = tempfile.mkdtemp(prefix=f"{build_str}_meta_")
         try:
@@ -410,6 +422,7 @@ def render_cubemap(
             uploader = TileUploadQueue(
                 tile_root=tile_root,
                 upload_fn=upload_file,
+                workers=PIPELINE_THREADS,
                 workers=4,
                 on_state_change=_tile_state_event_writer(tile_root, build_str),
             )
@@ -443,6 +456,7 @@ def render_cubemap(
                 "status": "processing",
                 "last_stage": "lod0_ready",
                 "lod0_tiles_count": lod0_uploaded,
+                "lod_levels": [0, 1],
             }
             meta_path = _write_metadata_file(metadata_payload, tmp_dir)
             upload_file(meta_path, metadata_key, "application/json")
