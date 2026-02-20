@@ -37,6 +37,8 @@ from panoconfig360_backend.utils.build_validation import validate_build_string, 
 import re
 
 
+logger = logging.getLogger(__name__)
+
 # CONFIGURAÇÕES GLOBAIS
 ROOT_DIR = Path(__file__).resolve().parents[1].parent
 CLIENTS_ROOT = Path("panoconfig360_cache/clients")
@@ -338,25 +340,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # CORS middleware
-ENV = os.getenv("ENVIRONMENT", "development")
+# Render env var (sem espaços):
+# CORS_ORIGINS=https://stratyconfig.pages.dev,http://127.0.0.1:5500,http://localhost:5500
+raw_origins = os.getenv("CORS_ORIGINS", "")
+origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
-if ENV == "production":
-    cors_origins = [
-        "https://stratyconfig.pages.dev",
-        "https://seudominio.com",
-    ]
-else:
-    cors_origins = [
-        "http://127.0.0.1:5500",
-        "http://localhost:5500",
-    ]
+if not origins:
+    logger.warning(
+        "CORS_ORIGINS está vazio; nenhuma origem estará autorizada para CORS."
+    )
 
+logger.info("CORS allowed origins: %s", origins)
 
-_cors_raw = os.getenv("CORS_ORIGINS", "https://stratyconfig.pages.dev")
-cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
