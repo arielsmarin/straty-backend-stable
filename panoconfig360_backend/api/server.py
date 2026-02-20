@@ -43,7 +43,8 @@ CLIENTS_ROOT = Path("panoconfig360_cache/clients")
 LOCAL_CACHE_DIR = ROOT_DIR / "panoconfig360_cache"
 os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
 TILE_RE = re.compile(r"^[0-9a-z]+_[fblrud]_\d+_\d+_\d+\.jpg$")
-TILE_ROOT_RE = re.compile(r"^clients/[a-z0-9\-]+/cubemap/[a-z0-9\-]+/tiles/[0-9a-z]+$")
+TILE_ROOT_RE = re.compile(
+    r"^clients/[a-z0-9\-]+/cubemap/[a-z0-9\-]+/tiles/[0-9a-z]+$")
 
 USE_MASK_STACK = True
 
@@ -146,13 +147,16 @@ def _render_build_background(
         )
         del stack_img
         cpu_elapsed = time.monotonic() - cpu_start
-        logging.info("⏱️ Tempo render CPU (%s): %.2fs", render_key, cpu_elapsed)
+        logging.info("⏱️ Tempo render CPU (%s): %.2fs",
+                     render_key, cpu_elapsed)
 
-        tiles = [(f"{tile_root}/{filename}", tile_bytes) for filename, tile_bytes, _ in tiles_with_lod]
+        tiles = [(f"{tile_root}/{filename}", tile_bytes)
+                 for filename, tile_bytes, _ in tiles_with_lod]
         upload_start = time.monotonic()
         upload_tiles_parallel(tiles, max_workers=25)
         upload_elapsed = time.monotonic() - upload_start
-        logging.info("⏱️ Tempo upload total (%s): %.2fs", render_key, upload_elapsed)
+        logging.info("⏱️ Tempo upload total (%s): %.2fs",
+                     render_key, upload_elapsed)
 
         metadata_payload = {
             "client": client_id,
@@ -180,11 +184,14 @@ def _render_build_background(
             tiles_count=len(tiles),
         )
     except Exception as exc:
-        logging.exception("❌ Falha no pipeline em background para %s", render_key)
-        _set_build_status(build_str, "failed", error=str(exc), failed_at=int(time.time()))
+        logging.exception(
+            "❌ Falha no pipeline em background para %s", render_key)
+        _set_build_status(build_str, "failed", error=str(
+            exc), failed_at=int(time.time()))
     finally:
         total_elapsed = time.monotonic() - total_start
-        logging.info("⏱️ Tempo total pipeline (%s): %.2fs", render_key, total_elapsed)
+        logging.info("⏱️ Tempo total pipeline (%s): %.2fs",
+                     render_key, total_elapsed)
         with active_background_guard:
             active_background_renders.discard(render_key)
 
@@ -267,15 +274,18 @@ def _render_remaining_lods(
                 try:
                     uploader.close_and_wait()
                 except Exception:
-                    logging.exception("❌ Erro ao encerrar fila de upload em background (%s)", render_key)
+                    logging.exception(
+                        "❌ Erro ao encerrar fila de upload em background (%s)", render_key)
             shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception:
-        logging.exception("❌ Falha na geração de LODs em background para %s", render_key)
+        logging.exception(
+            "❌ Falha na geração de LODs em background para %s", render_key)
     finally:
         with active_background_guard:
             active_background_renders.discard(render_key)
         elapsed = time.monotonic() - start
-        logging.info("⏱️ Background LOD render de %s terminou em %.2fs", render_key, elapsed)
+        logging.info(
+            "⏱️ Background LOD render de %s terminou em %.2fs", render_key, elapsed)
 
 
 def load_client_config(client_id: str):
@@ -296,12 +306,16 @@ def load_client_config(client_id: str):
             f"Configuração inválida para cliente '{client_id}': {exc}"
         ) from exc
     except json.JSONDecodeError as e:
-        logging.error("❌ Config JSON inválido para client '%s': %s", client_id, e)
-        raise ValueError(f"Configuração do cliente '{client_id}' contém JSON inválido: {e}")
+        logging.error(
+            "❌ Config JSON inválido para client '%s': %s", client_id, e)
+        raise ValueError(
+            f"Configuração do cliente '{client_id}' contém JSON inválido: {e}")
 
     if not scenes:
-        logging.error("❌ Config do client '%s' não possui scenes definidas", client_id)
-        raise ValueError(f"Configuração do cliente '{client_id}' não possui scenes definidas")
+        logging.error(
+            "❌ Config do client '%s' não possui scenes definidas", client_id)
+        raise ValueError(
+            f"Configuração do cliente '{client_id}' não possui scenes definidas")
 
     project["scenes"] = scenes
     project["client_id"] = client_id
@@ -322,6 +336,20 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # CORS middleware
+ENV = os.getenv("ENVIRONMENT", "development")
+
+if ENV == "production":
+    cors_origins = [
+        "https://stratyconfig.pages.dev",
+        "https://seudominio.com",
+    ]
+else:
+    cors_origins = [
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ]
+
+
 _cors_raw = os.getenv("CORS_ORIGINS", "https://stratyconfig.pages.dev")
 cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 app.add_middleware(
@@ -331,6 +359,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.post("/api/render", response_model=None)
 def render_cubemap(
@@ -378,17 +407,22 @@ def render_cubemap(
         project, _ = load_client_config(client_id)
     except FileNotFoundError as e:
         logging.warning("❌ Config não encontrado: %s", e)
-        raise HTTPException(404, f"Config não encontrado para cliente '{client_id}'.")
+        raise HTTPException(
+            404, f"Config não encontrado para cliente '{client_id}'.")
     except ValueError as e:
         logging.warning("❌ Config inválido: %s", e)
-        raise HTTPException(422, f"Config inválido para cliente '{client_id}'.")
-        logging.error("❌ Config não encontrada para client '%s': %s", client_id, e)
-        raise HTTPException(404, f"Configuração do cliente não encontrada: {e}")
+        raise HTTPException(
+            422, f"Config inválido para cliente '{client_id}'.")
+        logging.error(
+            "❌ Config não encontrada para client '%s': %s", client_id, e)
+        raise HTTPException(
+            404, f"Configuração do cliente não encontrada: {e}")
     except ValueError as e:
         logging.error("❌ Config inválida para client '%s': %s", client_id, e)
         raise HTTPException(400, f"Configuração do cliente inválida: {e}")
     except Exception as e:
-        logging.exception("❌ Falha inesperada ao carregar config do client '%s'", client_id)
+        logging.exception(
+            "❌ Falha inesperada ao carregar config do client '%s'", client_id)
         raise HTTPException(500, "Erro interno ao carregar configuração")
 
     # ======================================================
@@ -489,7 +523,8 @@ def render_tile_events(tile_root: str, cursor: int = 0, limit: int = 200):
 
     limit = max(1, min(limit, 500))
     events_key = f"{tile_root}/tile_events.ndjson"
-    events, next_cursor = read_jsonl_slice(events_key, cursor=cursor, limit=limit)
+    events, next_cursor = read_jsonl_slice(
+        events_key, cursor=cursor, limit=limit)
 
     # Check if render is complete by reading metadata status
     metadata_key = f"{tile_root}/metadata.json"
@@ -500,7 +535,8 @@ def render_tile_events(tile_root: str, cursor: int = 0, limit: int = 200):
     except FileNotFoundError:
         completed = False
     except (json.JSONDecodeError, IOError) as e:
-        logging.warning("⚠️ Failed to read metadata for completion check: %s", e)
+        logging.warning(
+            "⚠️ Failed to read metadata for completion check: %s", e)
         completed = False
 
     return {
@@ -540,7 +576,8 @@ def render_status(build: str, client: str, scene: str):
     except FileNotFoundError:
         pass
     except Exception:
-        logging.exception("❌ Falha ao consultar metadata para status (%s)", build_str)
+        logging.exception(
+            "❌ Falha ao consultar metadata para status (%s)", build_str)
         _set_build_status(build_str, "failed", error="metadata_read_error")
         return {"status": "failed", "build": build_str}
 
@@ -564,17 +601,22 @@ def render_2d(payload: Render2DRequest):
         project, _ = load_client_config(client_id)
     except FileNotFoundError as e:
         logging.warning("❌ Config não encontrado: %s", e)
-        raise HTTPException(404, f"Config não encontrado para cliente '{client_id}'.")
+        raise HTTPException(
+            404, f"Config não encontrado para cliente '{client_id}'.")
     except ValueError as e:
         logging.warning("❌ Config inválido: %s", e)
-        raise HTTPException(422, f"Config inválido para cliente '{client_id}'.")
-        logging.error("❌ Config não encontrada para client '%s': %s", client_id, e)
-        raise HTTPException(404, f"Configuração do cliente não encontrada: {e}")
+        raise HTTPException(
+            422, f"Config inválido para cliente '{client_id}'.")
+        logging.error(
+            "❌ Config não encontrada para client '%s': %s", client_id, e)
+        raise HTTPException(
+            404, f"Configuração do cliente não encontrada: {e}")
     except ValueError as e:
         logging.error("❌ Config inválida para client '%s': %s", client_id, e)
         raise HTTPException(400, f"Configuração do cliente inválida: {e}")
     except Exception as e:
-        logging.exception("❌ Falha inesperada ao carregar config do client '%s'", client_id)
+        logging.exception(
+            "❌ Falha inesperada ao carregar config do client '%s'", client_id)
         raise HTTPException(500, "Erro interno ao carregar configuração")
 
     try:
