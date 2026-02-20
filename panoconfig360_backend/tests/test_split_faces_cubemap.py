@@ -58,3 +58,53 @@ def test_configure_pyvips_concurrency_keeps_existing_env(monkeypatch):
     split_faces_cubemap.configure_pyvips_concurrency(0)
 
     assert os.environ["VIPS_CONCURRENCY"] == "2"
+
+
+def test_process_cubemap_to_memory_reuses_split_and_resizes_once_per_face(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pyvips", types.SimpleNamespace(Image=object))
+
+    from panoconfig360_backend.render import split_faces_cubemap
+
+    importlib.reload(split_faces_cubemap)
+    monkeypatch.setattr(split_faces_cubemap, "ensure_rgb8", lambda img: img)
+
+    calls = {"resize": 0, "write": []}
+
+    class FakeImage:
+        def __init__(self, width, height):
+            self.width = width
+            self.height = height
+
+        def flip(self, _):
+            return self
+
+        def extract_area(self, _x, _y, width, height):
+            return FakeImage(width, height)
+
+        def rot90(self):
+            return self
+
+        def rot270(self):
+            return self
+
+        def resize(self, scale, **_kwargs):
+            calls["resize"] += 1
+            return FakeImage(int(self.width * scale), int(self.height * scale))
+
+        def crop(self, *_args):
+            class FakeTile:
+                def write_to_buffer(self, fmt, **kwargs):
+                    calls["write"].append((fmt, kwargs))
+                    return b"jpg"
+
+            return FakeTile()
+
+    tiles = split_faces_cubemap.process_cubemap_to_memory(
+        FakeImage(12288, 2048),
+        tile_size=512,
+        build="build",
+    )
+
+    assert len(tiles) == 120
+    assert calls["resize"] == 6
+    assert calls["write"][0] == (".jpg", {"Q": 72, "strip": True, "optimize_coding": False})

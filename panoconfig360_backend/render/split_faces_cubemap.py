@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
@@ -233,6 +234,7 @@ def process_cubemap_to_memory(
     min_lod: int = 0,
     jpeg_quality: int = 72,
 ):
+    split_start = time.monotonic()
     cubemap_img = normalize_to_horizontal_cubemap(input_image)
     cubemap_img = ensure_rgb8(cubemap_img)
 
@@ -241,10 +243,10 @@ def process_cubemap_to_memory(
         raise ValueError("Cubemap horizontal inválido")
 
     lod_sizes = []
-    if tile_size <= face_size:
-        lod_sizes.append((tile_size, tile_size // 2))
     if tile_size * 2 <= face_size:
-        lod_sizes.append((tile_size * 2, tile_size))
+        lod_sizes.append((face_size // 2, tile_size))
+    if tile_size <= face_size:
+        lod_sizes.append((face_size, tile_size))
     if not lod_sizes:
         raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
     if min_lod < 0:
@@ -267,25 +269,38 @@ def process_cubemap_to_memory(
         else:
             marzipano_face = MARZIPANO_FACE_MAP[face_key]
         faces.append((face_img, marzipano_face))
+    logger.info("Tempo split faces: %.2fs", time.monotonic() - split_start)
 
     tiles: list[tuple[str, bytes, int]] = []
+    resize_lod0_elapsed = 0.0
+    extraction_start = time.monotonic()
     for lod, (target_size, lod_tile_size) in enumerate(lod_sizes):
         if lod < min_lod or lod > final_lod:
             continue
 
-        scale = target_size / face_size
         cols = target_size // lod_tile_size
         rows = target_size // lod_tile_size
 
         for face_img, marzipano_face in faces:
-            resized = ensure_rgb8(_resize_face_for_lod(face_img, scale))
+            resized = face_img
+            if target_size != face_size:
+                resize_start = time.monotonic()
+                resized = _resize_face_for_lod(face_img, target_size / face_size)
+                resize_lod0_elapsed += time.monotonic() - resize_start
             for x in range(cols):
                 for y in range(rows):
-                    tile = resized.extract_area(x * lod_tile_size, y * lod_tile_size, lod_tile_size, lod_tile_size)
-                    tile_bytes = tile.write_to_buffer(f".jpg[Q={jpeg_quality},strip=true]")
+                    tile = resized.crop(x * lod_tile_size, y * lod_tile_size, lod_tile_size, lod_tile_size)
+                    tile_bytes = tile.write_to_buffer(
+                        ".jpg",
+                        Q=jpeg_quality,
+                        strip=True,
+                        optimize_coding=False,
+                    )
                     filename = f"{build}_{marzipano_face}_{lod}_{x}_{y}.jpg"
                     tiles.append((filename, tile_bytes, lod))
         gc.collect()
+    logger.info("Tempo resize LOD0: %.2fs", resize_lod0_elapsed)
+    logger.info("Tempo tile extraction total: %.2fs", time.monotonic() - extraction_start)
 
     return tiles
 
