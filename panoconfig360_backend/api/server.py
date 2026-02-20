@@ -14,7 +14,11 @@ from panoconfig360_backend.render.dynamic_stack import (
     load_config,
     build_string_from_selection,
 )
-from panoconfig360_backend.render.split_faces_cubemap import process_cubemap, configure_pyvips_concurrency
+from panoconfig360_backend.render.split_faces_cubemap import (
+    process_cubemap,
+    process_cubemap_to_memory,
+    configure_pyvips_concurrency,
+)
 from panoconfig360_backend.models.render_2d import Render2DRequest
 from panoconfig360_backend.storage.factory import (
     append_jsonl,
@@ -23,11 +27,12 @@ from panoconfig360_backend.storage.factory import (
     read_jsonl_slice,
     upload_file,
     get_public_url,
+    upload_tiles_parallel,
 )
 from panoconfig360_backend.storage.tile_upload_queue import TileUploadQueue
 from panoconfig360_backend.render.scene_context import resolve_scene_context
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from panoconfig360_backend.utils.build_validation import validate_build_string, validate_safe_id
 import re
@@ -59,6 +64,8 @@ render_locks: OrderedDict[str, threading.Lock] = OrderedDict()
 render_locks_guard = threading.Lock()
 active_background_renders: set[str] = set()
 active_background_guard = threading.Lock()
+BUILD_STATUS: dict[str, dict] = {}
+BUILD_STATUS_LOCK = threading.Lock()
 
 
 def _get_render_lock(render_key: str) -> threading.Lock:
@@ -102,7 +109,86 @@ def _tiles_base_url() -> str:
     return get_public_url("").rstrip("/")
 
 
+def _set_build_status(build: str, status: str, **extra):
+    with BUILD_STATUS_LOCK:
+        current = BUILD_STATUS.get(build, {})
+        current.update({"status": status, **extra})
+        BUILD_STATUS[build] = current
+
+
 _TILE_WORKERS = int(os.getenv("TILE_WORKERS", "4"))
+
+
+def _render_build_background(
+    client_id: str,
+    scene_id: str,
+    selection: dict,
+    build_str: str,
+    tile_root: str,
+    metadata_key: str,
+):
+    render_key = f"{client_id}:{scene_id}:{build_str}"
+    total_start = time.monotonic()
+    _set_build_status(build_str, "processing", started_at=int(time.time()))
+
+    try:
+        project, _ = load_client_config(client_id)
+        ctx = resolve_scene_context(project, scene_id)
+        cpu_start = time.monotonic()
+        stack_img = stack_layers_image_only(
+            scene_id=scene_id,
+            layers=ctx["layers"],
+            selection=selection,
+            assets_root=ctx["assets_root"],
+        )
+        tiles_with_lod = process_cubemap_to_memory(
+            stack_img,
+            tile_size=512,
+            build=build_str,
+        )
+        del stack_img
+        cpu_elapsed = time.monotonic() - cpu_start
+        logging.info("⏱️ Tempo render CPU (%s): %.2fs", render_key, cpu_elapsed)
+
+        tiles = [(f"{tile_root}/{filename}", tile_bytes) for filename, tile_bytes, _ in tiles_with_lod]
+        upload_start = time.monotonic()
+        upload_tiles_parallel(tiles, max_workers=25)
+        upload_elapsed = time.monotonic() - upload_start
+        logging.info("⏱️ Tempo upload total (%s): %.2fs", render_key, upload_elapsed)
+
+        metadata_payload = {
+            "client": client_id,
+            "scene": scene_id,
+            "build": build_str,
+            "tileRoot": tile_root,
+            "generated_at": int(time.time()),
+            "status": "ready",
+            "tiles_count": len(tiles),
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+            json.dump(metadata_payload, tmp)
+            tmp_path = tmp.name
+        try:
+            upload_file(tmp_path, metadata_key, "application/json")
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+        _set_build_status(
+            build_str,
+            "done",
+            tile_root=tile_root,
+            completed_at=int(time.time()),
+            tiles_count=len(tiles),
+        )
+    except Exception as exc:
+        logging.exception("❌ Falha no pipeline em background para %s", render_key)
+        _set_build_status(build_str, "failed", error=str(exc), failed_at=int(time.time()))
+    finally:
+        total_elapsed = time.monotonic() - total_start
+        logging.info("⏱️ Tempo total pipeline (%s): %.2fs", render_key, total_elapsed)
+        with active_background_guard:
+            active_background_renders.discard(render_key)
 
 
 def _render_remaining_lods(
@@ -368,7 +454,7 @@ def render_cubemap(
         }
 
     # ======================================================
-    # 🏗️ PROCESSA IMAGEM (SÓ SE NÃO TEM CACHE) - FASE 1 (LOD 0)
+    # 🏗️ CACHE MISS: AGENDA PROCESSAMENTO EM BACKGROUND E RETORNA 202
     # ======================================================
     render_lock = _get_render_lock(render_key)
     with render_lock:
@@ -385,106 +471,26 @@ def render_cubemap(
                 "tiles": tiles,
             }
 
-        logging.info("🏗️ Cache miss — iniciando processamento LOD0 para %s", render_key)
-        start = time.monotonic()
-        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_lod0_")
-        logging.info(f"📁 Temp dir: {tmp_dir}")
-        uploader = None
-        stack_img_for_bg = None
+        with active_background_guard:
+            already_processing = render_key in active_background_renders
+            if not already_processing:
+                active_background_renders.add(render_key)
+                _set_build_status(build_str, "processing", tile_root=tile_root)
+                background_tasks.add_task(
+                    _render_build_background,
+                    client_id,
+                    scene_id,
+                    selection,
+                    build_str,
+                    tile_root,
+                    metadata_key,
+                )
+                logging.info("🧵 Background task agendada para %s", render_key)
 
-        try:
-            uploader = TileUploadQueue(
-                tile_root=tile_root,
-                upload_fn=upload_file,
-                workers=4,
-                on_state_change=_tile_state_event_writer(tile_root, build_str),
-            )
-            uploader.start()
-
-            stack_img = stack_layers_image_only(
-                scene_id=scene_id,
-                layers=scene_layers,
-                selection=selection,
-                assets_root=assets_root,
-            )
-
-            process_cubemap(
-                stack_img,
-                tmp_dir,
-                tile_size=512,
-                build=build_str,
-                max_lod=0,
-                on_tile_ready=uploader.enqueue,
-            )
-            # Keep the stacked image for the background task to avoid re-compositing
-            stack_img_for_bg = stack_img
-            del stack_img
-            uploader.close_and_wait()
-
-            lod0_uploaded = uploader.uploaded_count
-            metadata_payload = {
-                "client": client_id,
-                "scene": scene_id,
-                "build": build_str,
-                "tileRoot": tile_root,
-                "generated_at": int(time.time()),
-                "status": "processing",
-                "last_stage": "lod0_ready",
-                "lod0_tiles_count": lod0_uploaded,
-                "tile_state_counts": {
-                    "generated": 0,
-                    "uploading": 0,
-                    "uploaded": 0,
-                    "fading-in": 0,
-                    "visible": len(uploader.states),
-                },
-            }
-            meta_path = _write_metadata_file(metadata_payload, tmp_dir)
-            upload_file(meta_path, metadata_key, "application/json")
-
-            elapsed = time.monotonic() - start
-            logging.info("✅ LOD0 pronto para %s em %.2fs (%s tiles)", render_key, elapsed, lod0_uploaded)
-        except Exception as e:
-            logging.exception("❌ Erro no render LOD0")
-            raise HTTPException(500, f"Erro interno: {e}")
-        finally:
-            if uploader is not None:
-                try:
-                    uploader.close_and_wait()
-                except Exception:
-                    logging.exception("❌ Erro ao encerrar fila de upload (%s)", render_key)
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            logging.info(f"🧹 Temp removido: {tmp_dir}")
-
-    with active_background_guard:
-        if render_key not in active_background_renders:
-            background_tasks.add_task(
-                _render_remaining_lods,
-                client_id,
-                scene_id,
-                selection,
-                build_str,
-                tile_root,
-                metadata_key,
-                stack_img_for_bg,
-            )
-            active_background_renders.add(render_key)
-            logging.info("🧵 Background task agendada para LODs >= 1 (%s)", render_key)
-
-    tiles = {
-        "baseUrl": _tiles_base_url(),
-        "tileRoot": tile_root,
-        "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
-        "build": build_str,
-    }
-
-    return {
-        "status": "generated",
-        "client": client_id,
-        "scene": scene_id,
-        "build": build_str,
-        "tiles": tiles,
-    }
+    return JSONResponse(
+        status_code=202,
+        content={"status": "processing", "build": build_str},
+    )
 
 
 @app.get("/api/render/events")
@@ -520,6 +526,42 @@ def render_tile_events(tile_root: str, cursor: int = 0, limit: int = 200):
             "completed": completed,
         },
     }
+
+
+@app.get("/api/status/{build}")
+def render_status(build: str, client: str, scene: str):
+    try:
+        client_id = validate_safe_id(client, "client")
+        scene_id = validate_safe_id(scene, "scene")
+        build_str = validate_build_string(build)
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="build inválido")
+
+    tile_root = f"clients/{client_id}/cubemap/{scene_id}/tiles/{build_str}"
+    metadata_key = f"{tile_root}/metadata.json"
+
+    with BUILD_STATUS_LOCK:
+        state = dict(BUILD_STATUS.get(build_str, {}))
+
+    if state.get("status") == "failed":
+        return {"status": "failed", "build": build_str, "error": state.get("error")}
+
+    try:
+        metadata = get_json(metadata_key)
+        if metadata.get("status") == "ready":
+            _set_build_status(build_str, "done", tile_root=tile_root)
+            return {"status": "done", "build": build_str}
+    except FileNotFoundError:
+        pass
+    except Exception:
+        logging.exception("❌ Falha ao consultar metadata para status (%s)", build_str)
+        _set_build_status(build_str, "failed", error="metadata_read_error")
+        return {"status": "failed", "build": build_str}
+
+    if state.get("status") in {"processing", "done"}:
+        return {"status": state["status"], "build": build_str}
+
+    return {"status": "processing", "build": build_str}
 
 
 # RENDER 2D SIMPLES (SEM CACHE DE TILES, APENAS IMAGEM FINAL)

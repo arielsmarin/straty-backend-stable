@@ -22,6 +22,7 @@ if STORAGE_BACKEND == "r2":
             append_jsonl,
             read_jsonl_slice,
             get_public_url,
+            upload_tiles_parallel,
         )
         logging.info("✅ Using R2 storage backend")
     except Exception as e:
@@ -34,6 +35,7 @@ if STORAGE_BACKEND == "r2":
             get_json,
             append_jsonl,
             read_jsonl_slice,
+            upload_tiles_parallel,
         )
         
         def get_public_url(key: str) -> str:
@@ -47,6 +49,7 @@ else:
         get_json,
         append_jsonl,
         read_jsonl_slice,
+        upload_tiles_parallel,
     )
     
     def get_public_url(key: str) -> str:
@@ -61,4 +64,5 @@ __all__ = [
     "append_jsonl",
     "read_jsonl_slice",
     "get_public_url",
+    "upload_tiles_parallel",
 ]
