@@ -134,12 +134,14 @@ def _render_build_background(
         project, _ = load_client_config(client_id)
         ctx = resolve_scene_context(project, scene_id)
         cpu_start = time.monotonic()
+        stack_start = time.monotonic()
         stack_img = stack_layers_image_only(
             scene_id=scene_id,
             layers=ctx["layers"],
             selection=selection,
             assets_root=ctx["assets_root"],
         )
+        logging.info("Tempo stack: %.2fs", time.monotonic() - stack_start)
         tiles_with_lod = process_cubemap_to_memory(
             stack_img,
             tile_size=512,
