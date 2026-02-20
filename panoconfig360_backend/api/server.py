@@ -31,7 +31,6 @@ from panoconfig360_backend.storage.factory import (
 )
 from panoconfig360_backend.storage.tile_upload_queue import TileUploadQueue
 from panoconfig360_backend.render.scene_context import resolve_scene_context
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from panoconfig360_backend.utils.build_validation import validate_build_string, validate_safe_id
@@ -42,7 +41,6 @@ import re
 ROOT_DIR = Path(__file__).resolve().parents[1].parent
 CLIENTS_ROOT = Path("panoconfig360_cache/clients")
 LOCAL_CACHE_DIR = ROOT_DIR / "panoconfig360_cache"
-FRONTEND_DIR = ROOT_DIR / "panoconfig360_frontend"
 os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
 TILE_RE = re.compile(r"^[0-9a-z]+_[fblrud]_\d+_\d+_\d+\.jpg$")
 TILE_ROOT_RE = re.compile(r"^clients/[a-z0-9\-]+/cubemap/[a-z0-9\-]+/tiles/[0-9a-z]+$")
@@ -324,27 +322,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # CORS middleware
-_cors_raw = os.getenv("CORS_ORIGINS", "")
-if not _cors_raw:
-    logging.warning(
-        "⚠️ CORS_ORIGINS não configurado. "
-        "Defina CORS_ORIGINS no ambiente para permitir acesso do frontend."
-    )
-cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []
+_cors_raw = os.getenv("CORS_ORIGINS", "https://stratyconfig.pages.dev")
+cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.mount("/panoconfig360_cache",
-          StaticFiles(directory=LOCAL_CACHE_DIR), name="panoconfig360_cache")
-app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
-app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
-
 
 @app.post("/api/render", response_model=None)
 def render_cubemap(
@@ -669,14 +655,6 @@ def render_2d(payload: Render2DRequest):
     finally:
         if output_path is not None and os.path.exists(output_path):
             os.remove(output_path)
-
-
-@app.get("/")
-def serve_frontend():
-    index_path = FRONTEND_DIR / "index.html"
-    if not index_path.exists():
-        raise HTTPException(404, "index.html não encontrado")
-    return FileResponse(index_path)
 
 
 @app.get("/api/health")
