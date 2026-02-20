@@ -147,9 +147,6 @@ def _increment_build_tiles_uploaded(build: str):
             current["tiles_uploaded"] = min(current["tiles_uploaded"], tiles_total)
             current["progress"] = current["tiles_uploaded"] / tiles_total
             current["percent_complete"] = current["progress"]
-        if current.get("tiles_uploaded", 0) > 0:
-            current["tiles_ready"] = True
-            current["faces_ready"] = True
         BUILD_STATUS[build] = current
 
 
@@ -656,6 +653,15 @@ def render_cubemap(
                         min_lod_for_background = 1
                 except Exception:
                     logging.exception("⚠️ Falha no upload síncrono de LOD0 para %s", render_key)
+                    _set_build_status(
+                        build_str,
+                        "processing",
+                        tile_root=tile_root,
+                        faces_ready=False,
+                        tiles_ready=False,
+                        lod_ready=-1,
+                        error="lod0_sync_failed",
+                    )
                 background_tasks.add_task(
                     _render_build_background,
                     client_id,
