@@ -1,59 +1,83 @@
 import json
 import pytest
+from botocore.exceptions import ClientError
 from fastapi import HTTPException
 
 
-def test_load_client_config_file_not_found(monkeypatch):
-    """Config file doesn't exist should raise FileNotFoundError."""
+class _FakeBody:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def read(self):
+        return self._payload
+
+
+class _FakeS3Client:
+    def __init__(self, data_by_key=None, missing_keys=None):
+        self.data_by_key = data_by_key or {}
+        self.missing_keys = set(missing_keys or [])
+
+    def get_object(self, Bucket, Key):
+        if Key in self.missing_keys:
+            raise ClientError(
+                error_response={"Error": {"Code": "NoSuchKey"}},
+                operation_name="GetObject",
+            )
+        return {"Body": _FakeBody(self.data_by_key[Key])}
+
+
+def test_load_client_config_not_found_in_r2(monkeypatch):
+    """Missing config in R2 should raise ValueError."""
     from panoconfig360_backend.api import server
 
-    monkeypatch.setattr(server, "LOCAL_CACHE_DIR", __import__("pathlib").Path("/tmp/nonexistent"))
+    key = "clients/testclient/testclient_cfg.json"
+    monkeypatch.setattr(
+        server.storage_r2,
+        "s3_client",
+        _FakeS3Client(missing_keys={key}),
+    )
 
-    with pytest.raises(FileNotFoundError, match="não encontrada"):
+    with pytest.raises(ValueError, match="não encontrada no R2"):
         server.load_client_config("testclient")
 
 
-def test_load_client_config_invalid_json(tmp_path, monkeypatch):
+def test_load_client_config_invalid_json(monkeypatch):
     """Invalid JSON in config should raise ValueError."""
     from panoconfig360_backend.api import server
 
-    monkeypatch.setattr(server, "LOCAL_CACHE_DIR", tmp_path)
-
-    client_dir = tmp_path / "clients" / "testclient"
-    client_dir.mkdir(parents=True)
-    cfg_path = client_dir / "testclient_cfg.json"
-    cfg_path.write_text("{invalid json content")
+    key = "clients/testclient/testclient_cfg.json"
+    monkeypatch.setattr(
+        server.storage_r2,
+        "s3_client",
+        _FakeS3Client(data_by_key={key: b"{invalid json content"}),
+    )
 
     with pytest.raises(ValueError, match="JSON inválido"):
         server.load_client_config("testclient")
 
 
-def test_load_client_config_no_scenes(tmp_path, monkeypatch):
-    """Config with empty scenes should raise ValueError."""
+def test_load_client_config_no_scenes(monkeypatch):
+    """Config with empty scenes should return default scene."""
     from panoconfig360_backend.api import server
 
-    monkeypatch.setattr(server, "LOCAL_CACHE_DIR", tmp_path)
+    key = "clients/testclient/testclient_cfg.json"
+    payload = json.dumps({"scenes": {}, "layers": []}).encode("utf-8")
+    monkeypatch.setattr(
+        server.storage_r2,
+        "s3_client",
+        _FakeS3Client(data_by_key={key: payload}),
+    )
 
-    client_dir = tmp_path / "clients" / "testclient"
-    client_dir.mkdir(parents=True)
-    cfg_path = client_dir / "testclient_cfg.json"
-    cfg_path.write_text(json.dumps({"scenes": {}, "layers": []}))
-
-    # load_config will provide a default scene when scenes is empty/falsy
-    # so this should succeed and return a project with a "default" scene
     project, naming = server.load_client_config("testclient")
     assert "default" in project["scenes"]
+    assert naming == {}
 
 
-def test_load_client_config_valid(tmp_path, monkeypatch):
-    """Valid config should load successfully."""
+def test_load_client_config_valid(monkeypatch):
+    """Valid config should load successfully from R2."""
     from panoconfig360_backend.api import server
 
-    monkeypatch.setattr(server, "LOCAL_CACHE_DIR", tmp_path)
-
-    client_dir = tmp_path / "clients" / "testclient"
-    client_dir.mkdir(parents=True)
-    cfg_path = client_dir / "testclient_cfg.json"
+    key = "clients/testclient/testclient_cfg.json"
     cfg = {
         "scenes": {
             "kitchen": {
@@ -69,7 +93,11 @@ def test_load_client_config_valid(tmp_path, monkeypatch):
         },
         "naming": {"prefix": "test"},
     }
-    cfg_path.write_text(json.dumps(cfg))
+    monkeypatch.setattr(
+        server.storage_r2,
+        "s3_client",
+        _FakeS3Client(data_by_key={key: json.dumps(cfg).encode("utf-8")}),
+    )
 
     project, naming = server.load_client_config("testclient")
     assert project["client_id"] == "testclient"
