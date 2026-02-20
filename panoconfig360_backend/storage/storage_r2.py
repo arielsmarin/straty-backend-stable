@@ -107,6 +107,7 @@ def upload_tiles_parallel(
     tiles: list[tuple[str, bytes]],
     content_type: str = "image/jpeg",
     max_workers: int = 25,
+    on_tile_uploaded=None,
 ):
     """Upload tiles in parallel using boto3 put_object in a thread pool."""
     if not s3_client:
@@ -130,6 +131,8 @@ def upload_tiles_parallel(
                 ContentType=content_type,
                 CacheControl="public, max-age=31536000, immutable",
             )
+            if on_tile_uploaded is not None:
+                on_tile_uploaded(tile_key)
         finally:
             with active_lock:
                 active_uploads -= 1

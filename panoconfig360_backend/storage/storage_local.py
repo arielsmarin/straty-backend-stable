@@ -58,6 +58,7 @@ def upload_tiles_parallel(
     tiles: list[tuple[str, bytes]],
     content_type: str = "image/jpeg",
     max_workers: int = 25,
+    on_tile_uploaded=None,
 ):
     _ = content_type
     max_workers = max(1, max_workers)
@@ -67,6 +68,8 @@ def upload_tiles_parallel(
         dest.parent.mkdir(parents=True, exist_ok=True)
         with open(dest, "wb") as dst:
             dst.write(tile_bytes)
+        if on_tile_uploaded is not None:
+            on_tile_uploaded(tile_key)
 
     futures = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
