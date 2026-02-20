@@ -1,21 +1,30 @@
-from pathlib import Path
-
-
-def _server_source() -> str:
-    server_path = Path(__file__).resolve().parents[1] / "api" / "server.py"
-    return server_path.read_text(encoding="utf-8")
+import importlib
+import sys
+import types
 
 
 def test_server_has_no_frontend_static_mounts():
-    source = _server_source()
-    assert "from fastapi.staticfiles import StaticFiles" not in source
-    assert 'app.mount("/static"' not in source
-    assert 'app.mount("/assets"' not in source
-    assert 'app.mount("/",' not in source
+    sys.modules["pyvips"] = types.SimpleNamespace(Image=object, __version__="mock")
+    server = importlib.import_module("panoconfig360_backend.api.server")
+    app = importlib.reload(server).app
+    paths = {route.path for route in app.routes}
+    assert "/static" not in paths
+    assert "/assets" not in paths
+    assert "/" not in paths
 
 
-def test_server_has_no_root_html_route_and_has_cloudflare_cors_default():
-    source = _server_source()
-    assert '@app.get("/")' not in source
-    assert 'os.getenv("CORS_ORIGINS", "https://stratyconfig.pages.dev")' in source
-    assert 'allow_methods=["*"]' in source
+def test_server_has_no_root_html_route():
+    sys.modules["pyvips"] = types.SimpleNamespace(Image=object, __version__="mock")
+    server = importlib.import_module("panoconfig360_backend.api.server")
+    app = importlib.reload(server).app
+    paths = {route.path for route in app.routes}
+    assert "/" not in paths
+
+
+def test_server_has_cloudflare_cors_default():
+    sys.modules["pyvips"] = types.SimpleNamespace(Image=object, __version__="mock")
+    server = importlib.import_module("panoconfig360_backend.api.server")
+    module = importlib.reload(server)
+    cors = next(m for m in module.app.user_middleware if m.cls.__name__ == "CORSMiddleware")
+    assert cors.kwargs["allow_origins"] == ["https://stratyconfig.pages.dev"]
+    assert cors.kwargs["allow_methods"] == ["*"]
