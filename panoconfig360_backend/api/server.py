@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from panoconfig360_backend.render.dynamic_stack import (
-    load_config,
+    _validate_config,
     build_string_from_selection,
 )
 from panoconfig360_backend.render.split_faces_cubemap import (
@@ -34,6 +34,8 @@ from panoconfig360_backend.render.scene_context import resolve_scene_context
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from panoconfig360_backend.utils.build_validation import validate_build_string, validate_safe_id
+from panoconfig360_backend.storage import storage_r2
+from botocore.exceptions import ClientError
 import re
 
 
@@ -44,6 +46,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1].parent
 CLIENTS_ROOT = Path("panoconfig360_cache/clients")
 LOCAL_CACHE_DIR = ROOT_DIR / "panoconfig360_cache"
 os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
+CLIENT_CONFIG_BUCKET = os.getenv("R2_CONFIG_BUCKET", "panoconfig360")
 TILE_RE = re.compile(r"^[0-9a-z]+_[fblrud]_\d+_\d+_\d+\.jpg$")
 TILE_ROOT_RE = re.compile(
     r"^clients/[a-z0-9\-]+/cubemap/[a-z0-9\-]+/tiles/[0-9a-z]+$")
@@ -343,26 +346,54 @@ def _render_remaining_lods(
 
 def load_client_config(client_id: str):
     validate_safe_id(client_id, "client_id")
+    key = f"clients/{client_id}/{client_id}_cfg.json"
+    logger.info("Loading client config from R2: %s", key)
 
-    config_path = LOCAL_CACHE_DIR / "clients" / \
-        client_id / f"{client_id}_cfg.json"
-
-    if not config_path.exists():
-        logging.error("❌ Config não encontrada: %s", config_path)
-        raise FileNotFoundError(
-            f"Configuração do cliente '{client_id}' não encontrada em {config_path}.")
+    s3_client = storage_r2.s3_client
+    if s3_client is None:
+        raise RuntimeError("R2 client not initialized")
 
     try:
-        project, scenes, naming = load_config(config_path)
-    except ValueError as exc:
-        raise ValueError(
-            f"Configuração inválida para cliente '{client_id}': {exc}"
-        ) from exc
+        response = s3_client.get_object(
+            Bucket=CLIENT_CONFIG_BUCKET,
+            Key=key,
+        )
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code in {"NoSuchKey", "404", "NotFound"}:
+            logger.error("Client config not found in R2: %s", key)
+            raise ValueError(
+                f"Configuração do cliente '{client_id}' não encontrada no R2 ({key})"
+            ) from exc
+        raise
+
+    data = response["Body"].read()
+
+    try:
+        project = json.loads(data)
     except json.JSONDecodeError as e:
         logging.error(
             "❌ Config JSON inválido para client '%s': %s", client_id, e)
         raise ValueError(
             f"Configuração do cliente '{client_id}' contém JSON inválido: {e}")
+
+    try:
+        _validate_config(project)
+    except ValueError as exc:
+        raise ValueError(
+            f"Configuração inválida para cliente '{client_id}': {exc}"
+        ) from exc
+
+    scenes = project.get("scenes")
+    if not scenes:
+        scenes = {
+            "default": {
+                "scene_index": 0,
+                "layers": project.get("layers", []),
+                "base_image": project.get("base_image"),
+            }
+        }
+    naming = project.get("naming", {})
 
     if not scenes:
         logging.error(
