@@ -23,6 +23,8 @@ def test_render_cache_miss_returns_202(monkeypatch):
     assert response.status_code == 202
     assert response.json()["status"] == "processing"
     assert response.json()["build"] == "ab12cd34"
+    assert response.json()["tiles"]["build"] == "ab12cd34"
+    assert response.json()["tiles"]["tileRoot"] == "clients/client1/cubemap/scene1/tiles/ab12cd34"
 
 
 def test_status_returns_processing_when_metadata_missing(monkeypatch):
@@ -91,6 +93,40 @@ def test_status_returns_upload_progress(monkeypatch):
             "tiles_total": 48,
             "progress": 0.25,
         }
+    finally:
+        with server.BUILD_LOCK:
+            server.BUILD_STATUS.pop("ab0000000000", None)
+
+
+def test_status_returns_extended_progress_fields(monkeypatch):
+    from panoconfig360_backend.api import server
+
+    def _raise_not_found(key):
+        raise FileNotFoundError(key)
+
+    monkeypatch.setattr(server, "get_json", _raise_not_found)
+    with server.BUILD_LOCK:
+        server.BUILD_STATUS["ab0000000000"] = {
+            "status": "uploading",
+            "tiles_uploaded": 12,
+            "tiles_total": 48,
+            "progress": 0.25,
+            "percent_complete": 0.25,
+            "faces_ready": True,
+            "tiles_ready": True,
+            "lod_ready": 0,
+            "error": None,
+        }
+
+    client = TestClient(server.app)
+    try:
+        response = client.get("/api/status/ab0000000000?client=client1&scene=scene1")
+
+        assert response.status_code == 200
+        assert response.json()["percent_complete"] == 0.25
+        assert response.json()["faces_ready"] is True
+        assert response.json()["tiles_ready"] is True
+        assert response.json()["lod_ready"] == 0
     finally:
         with server.BUILD_LOCK:
             server.BUILD_STATUS.pop("ab0000000000", None)

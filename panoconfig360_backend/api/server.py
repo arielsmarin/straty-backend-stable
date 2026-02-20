@@ -121,6 +121,10 @@ def _default_build_state() -> dict:
         "tiles_uploaded": 0,
         "tiles_total": DEFAULT_TILES_TOTAL,
         "progress": 0.0,
+        "percent_complete": 0.0,
+        "faces_ready": False,
+        "tiles_ready": False,
+        "lod_ready": -1,
         "error": None,
     }
 
@@ -129,6 +133,8 @@ def _set_build_status(build: str, status: str, **extra):
     with BUILD_LOCK:
         current = dict(BUILD_STATUS.get(build, _default_build_state()))
         current.update({"status": status, **extra})
+        if "progress" in current and "percent_complete" not in extra:
+            current["percent_complete"] = current["progress"]
         BUILD_STATUS[build] = current
 
 
@@ -140,6 +146,10 @@ def _increment_build_tiles_uploaded(build: str):
         if tiles_total > 0:
             current["tiles_uploaded"] = min(current["tiles_uploaded"], tiles_total)
             current["progress"] = current["tiles_uploaded"] / tiles_total
+            current["percent_complete"] = current["progress"]
+        if current.get("tiles_uploaded", 0) > 0:
+            current["tiles_ready"] = True
+            current["faces_ready"] = True
         BUILD_STATUS[build] = current
 
 
@@ -153,6 +163,7 @@ def _render_build_background(
     build_str: str,
     tile_root: str,
     metadata_key: str,
+    min_lod: int = 0,
 ):
     render_key = f"{client_id}:{scene_id}:{build_str}"
     total_start = time.monotonic()
@@ -182,6 +193,7 @@ def _render_build_background(
             stack_img,
             tile_size=512,
             build=build_str,
+            min_lod=min_lod,
         )
         del stack_img
         cpu_elapsed = time.monotonic() - cpu_start
@@ -233,10 +245,14 @@ def _render_build_background(
             "completed",
             tile_root=tile_root,
             completed_at=int(time.time()),
+            faces_ready=True,
+            tiles_ready=True,
+            lod_ready=1,
             tiles_count=tiles_total,
             tiles_uploaded=tiles_total,
             tiles_total=tiles_total,
             progress=1.0,
+            percent_complete=1.0,
             error=None,
         )
     except Exception as exc:
@@ -582,8 +598,64 @@ def render_cubemap(
                     tiles_uploaded=0,
                     tiles_total=DEFAULT_TILES_TOTAL,
                     progress=0.0,
+                    percent_complete=0.0,
+                    faces_ready=False,
+                    tiles_ready=False,
+                    lod_ready=-1,
                     error=None,
                 )
+                min_lod_for_background = 0
+                try:
+                    stack_img = stack_layers_image_only(
+                        scene_id=scene_id,
+                        layers=scene_layers,
+                        selection=selection,
+                        assets_root=assets_root,
+                    )
+                    lod0_tiles_with_lod = process_cubemap_to_memory(
+                        stack_img,
+                        tile_size=512,
+                        build=build_str,
+                        min_lod=0,
+                        max_lod=0,
+                    )
+                    del stack_img
+                    lod0_tiles = [
+                        (f"{tile_root}/{filename}", tile_bytes)
+                        for filename, tile_bytes, _ in lod0_tiles_with_lod
+                    ]
+                    lod0_total = len(lod0_tiles)
+                    if lod0_total > 0:
+                        _set_build_status(
+                            build_str,
+                            "uploading",
+                            tile_root=tile_root,
+                            tiles_uploaded=0,
+                            tiles_total=max(DEFAULT_TILES_TOTAL, lod0_total),
+                            progress=0.0,
+                            percent_complete=0.0,
+                            faces_ready=False,
+                            tiles_ready=False,
+                            lod_ready=-1,
+                            error=None,
+                        )
+                        upload_tiles_parallel(
+                            lod0_tiles,
+                            max_workers=8,
+                            on_tile_uploaded=lambda _: _increment_build_tiles_uploaded(build_str),
+                        )
+                        _set_build_status(
+                            build_str,
+                            "processing",
+                            tile_root=tile_root,
+                            faces_ready=True,
+                            tiles_ready=True,
+                            lod_ready=0,
+                            error=None,
+                        )
+                        min_lod_for_background = 1
+                except Exception:
+                    logging.exception("⚠️ Falha no upload síncrono de LOD0 para %s", render_key)
                 background_tasks.add_task(
                     _render_build_background,
                     client_id,
@@ -592,12 +664,19 @@ def render_cubemap(
                     build_str,
                     tile_root,
                     metadata_key,
+                    min_lod_for_background,
                 )
                 logging.info("🧵 Background task agendada para %s", render_key)
 
+    tiles = {
+        "baseUrl": _tiles_base_url(),
+        "tileRoot": tile_root,
+        "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
+        "build": build_str,
+    }
     return JSONResponse(
         status_code=202,
-        content={"status": "processing", "build": build_str},
+        content={"status": "processing", "build": build_str, "tiles": tiles},
     )
 
 
@@ -680,7 +759,7 @@ def render_status(build: str, client: str = "", scene: str = ""):
     status_map = {"done": "completed", "failed": "error"}
     response = {"build": build_str, "status": status_map.get(status, status)}
 
-    for key in ("tiles_uploaded", "tiles_total", "progress"):
+    for key in ("tiles_uploaded", "tiles_total", "progress", "percent_complete", "faces_ready", "tiles_ready", "lod_ready"):
         if key in state:
             response[key] = state[key]
     if state.get("error") is not None:
