@@ -55,7 +55,7 @@ services:
       - key: MAX_TILE_CONCURRENCY
         value: 1
       - key: VIPS_CONCURRENCY
-        value: 1
+        value: 0
       
       # Rate limiting
       - key: RATE_LIMIT_ENABLED

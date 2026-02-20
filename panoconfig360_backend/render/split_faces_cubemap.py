@@ -43,39 +43,15 @@ def _resize_face_for_lod(face_img: pyvips.Image, scale: float) -> pyvips.Image:
     return face_img.resize(scale, kernel="linear")
 
 
-def _configure_pyvips_concurrency(limit: int = 1) -> None:
+def _configure_pyvips_concurrency(limit: int = 0) -> None:
     global _PYVIPS_CONCURRENCY_CONFIGURED
     with _PYVIPS_CONCURRENCY_LOCK:
         if _PYVIPS_CONCURRENCY_CONFIGURED:
             return
 
         logger.info("pyvips version detected: %s", getattr(pyvips, "__version__", "unknown"))
-
-        setter = getattr(pyvips, "concurrency_set", None)
-        if callable(setter):
-            try:
-                setter(limit)
-                logger.info("Configured pyvips concurrency to %d via pyvips.concurrency_set", limit)
-                _PYVIPS_CONCURRENCY_CONFIGURED = True
-                return
-            except Exception as exc:
-                logger.warning("pyvips.concurrency_set failed: %s", exc)
-
-        vips_lib_setter = getattr(getattr(pyvips, "vips_lib", None), "vips_concurrency_set", None)
-        if callable(vips_lib_setter):
-            try:
-                vips_lib_setter(limit)
-                logger.info("Configured pyvips concurrency to %d via pyvips.vips_lib.vips_concurrency_set", limit)
-                _PYVIPS_CONCURRENCY_CONFIGURED = True
-                return
-            except Exception as exc:
-                logger.warning("pyvips.vips_lib.vips_concurrency_set failed: %s", exc)
-
-        os.environ["VIPS_CONCURRENCY"] = str(limit)
-        logger.warning(
-            "Pyvips concurrency API unavailable; set VIPS_CONCURRENCY=%s fallback (effective when libvips initializes).",
-            limit,
-        )
+        os.environ.setdefault("VIPS_CONCURRENCY", str(limit))
+        logger.info("Configured libvips concurrency via VIPS_CONCURRENCY=%s", os.environ["VIPS_CONCURRENCY"])
         _PYVIPS_CONCURRENCY_CONFIGURED = True
 
 
@@ -140,7 +116,6 @@ def process_cubemap(
     min_lod: int = 0,
     on_tile_ready: Optional[Callable[[Path, str, int], None]] = None,
 ):
-    _configure_pyvips_concurrency(1)
     output_base_dir = Path(output_base_dir)
     output_base_dir.mkdir(parents=True, exist_ok=True)
 
