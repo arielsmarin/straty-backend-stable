@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ASSETS_ROOT = Path(__file__).resolve().parents[2] / "panoconfig360_cache"
@@ -51,6 +52,30 @@ def download_file(key: str, dest_path: str):
     except Exception as e:
         logging.error(f"❌ Failed to copy {key}: {e}")
         raise
+
+
+def upload_tiles_parallel(
+    tiles: list[tuple[str, bytes]],
+    content_type: str = "image/jpeg",
+    max_workers: int = 25,
+):
+    _ = content_type
+    max_workers = max(1, max_workers)
+
+    def _write_tile(tile_key: str, tile_bytes: bytes):
+        dest = _resolve_path(tile_key)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "wb") as dst:
+            dst.write(tile_bytes)
+
+    futures = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for tile_key, tile_bytes in tiles:
+            futures.append(executor.submit(_write_tile, tile_key, tile_bytes))
+        for future in as_completed(futures):
+            future.result()
+
+    logging.info("💾 Upload paralelo local concluído: %s tiles", len(tiles))
 
 
 def get_json(key: str) -> dict:

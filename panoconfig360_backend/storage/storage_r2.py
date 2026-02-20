@@ -6,8 +6,10 @@ import os
 import json
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 # Configuration from environment
@@ -27,12 +29,14 @@ logging.info(f"🌐 R2 public URL: {R2_PUBLIC_URL}")
 # Initialize S3 client for R2
 s3_client = None
 if R2_ENDPOINT_URL and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY:
+    config = Config(max_pool_connections=50)
     s3_client = boto3.client(
         "s3",
         endpoint_url=R2_ENDPOINT_URL,
         aws_access_key_id=R2_ACCESS_KEY_ID,
         aws_secret_access_key=R2_SECRET_ACCESS_KEY,
         region_name="auto",
+        config=config,
     )
     logging.info("✅ R2 client initialized successfully")
 else:
@@ -97,6 +101,53 @@ def download_file(key: str, dest_path: str):
     except Exception as e:
         logging.error(f"❌ Failed to download from R2 {key}: {e}")
         raise
+
+
+def upload_tiles_parallel(
+    tiles: list[tuple[str, bytes]],
+    content_type: str = "image/jpeg",
+    max_workers: int = 25,
+):
+    """Upload tiles in parallel using boto3 put_object in a thread pool."""
+    if not s3_client:
+        raise RuntimeError("R2 client not initialized")
+
+    max_workers = max(1, max_workers)
+    active_uploads = 0
+    max_active_uploads = 0
+    active_lock = threading.Lock()
+
+    def _put(tile_key: str, tile_bytes: bytes):
+        nonlocal active_uploads, max_active_uploads
+        with active_lock:
+            active_uploads += 1
+            max_active_uploads = max(max_active_uploads, active_uploads)
+        try:
+            s3_client.put_object(
+                Bucket=R2_BUCKET_NAME,
+                Key=tile_key,
+                Body=tile_bytes,
+                ContentType=content_type,
+                CacheControl="public, max-age=31536000, immutable",
+            )
+        finally:
+            with active_lock:
+                active_uploads -= 1
+
+    futures = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for tile_key, tile_bytes in tiles:
+            futures.append(executor.submit(_put, tile_key, tile_bytes))
+
+        for future in as_completed(futures):
+            future.result()
+
+    logging.info(
+        "☁️ Upload paralelo concluído: %s tiles (workers=%s, max ativos=%s)",
+        len(tiles),
+        max_workers,
+        max_active_uploads,
+    )
 
 
 def get_json(key: str) -> dict:

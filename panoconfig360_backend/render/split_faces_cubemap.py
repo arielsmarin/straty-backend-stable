@@ -225,6 +225,71 @@ def process_cubemap(
         gc.collect()
 
 
+def process_cubemap_to_memory(
+    input_image,
+    tile_size: int = 512,
+    build: str = "unknown",
+    max_lod: Optional[int] = None,
+    min_lod: int = 0,
+    jpeg_quality: int = 72,
+):
+    cubemap_img = normalize_to_horizontal_cubemap(input_image)
+    cubemap_img = ensure_rgb8(cubemap_img)
+
+    face_size = cubemap_img.height
+    if cubemap_img.width != face_size * 6:
+        raise ValueError("Cubemap horizontal inválido")
+
+    lod_sizes = []
+    if tile_size <= face_size:
+        lod_sizes.append((tile_size, tile_size // 2))
+    if tile_size * 2 <= face_size:
+        lod_sizes.append((tile_size * 2, tile_size))
+    if not lod_sizes:
+        raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
+    if min_lod < 0:
+        raise ValueError("min_lod deve ser >= 0")
+
+    final_lod = len(lod_sizes) - 1 if max_lod is None else min(max_lod, len(lod_sizes) - 1)
+    if final_lod < min_lod:
+        return []
+
+    faces = []
+    for i, face_key in enumerate(STRIP_FACES):
+        left = i * face_size
+        face_img = cubemap_img.extract_area(left, 0, face_size, face_size)
+        if face_key == "py":
+            face_img = face_img.rot270()
+            marzipano_face = MARZIPANO_FACE_MAP["ny"]
+        elif face_key == "ny":
+            face_img = face_img.rot90()
+            marzipano_face = MARZIPANO_FACE_MAP["py"]
+        else:
+            marzipano_face = MARZIPANO_FACE_MAP[face_key]
+        faces.append((face_img, marzipano_face))
+
+    tiles: list[tuple[str, bytes, int]] = []
+    for lod, (target_size, lod_tile_size) in enumerate(lod_sizes):
+        if lod < min_lod or lod > final_lod:
+            continue
+
+        scale = target_size / face_size
+        cols = target_size // lod_tile_size
+        rows = target_size // lod_tile_size
+
+        for face_img, marzipano_face in faces:
+            resized = ensure_rgb8(_resize_face_for_lod(face_img, scale))
+            for x in range(cols):
+                for y in range(rows):
+                    tile = resized.extract_area(x * lod_tile_size, y * lod_tile_size, lod_tile_size, lod_tile_size)
+                    tile_bytes = tile.write_to_buffer(f".jpg[Q={jpeg_quality},strip=true]")
+                    filename = f"{build}_{marzipano_face}_{lod}_{x}_{y}.jpg"
+                    tiles.append((filename, tile_bytes, lod))
+        gc.collect()
+
+    return tiles
+
+
 """ def process_cubemap(
     input_image,
     output_base_dir: Path | str,
