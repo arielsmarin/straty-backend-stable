@@ -66,7 +66,10 @@ def test_status_returns_idle_for_invalid_build():
 def test_status_returns_upload_progress(monkeypatch):
     from panoconfig360_backend.api import server
 
-    monkeypatch.setattr(server, "get_json", lambda key: (_ for _ in ()).throw(FileNotFoundError(key)))
+    def _raise_not_found(key):
+        raise FileNotFoundError(key)
+
+    monkeypatch.setattr(server, "get_json", _raise_not_found)
     with server.BUILD_LOCK:
         server.BUILD_STATUS["ab0000000000"] = {
             "status": "uploading",

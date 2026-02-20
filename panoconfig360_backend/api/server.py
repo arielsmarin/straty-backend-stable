@@ -61,6 +61,7 @@ last_request_time = 0.0
 lock = threading.Lock()
 MIN_INTERVAL = 1.0
 MAX_RENDER_LOCKS = 256
+DEFAULT_TILES_TOTAL = 48
 render_locks: OrderedDict[str, threading.Lock] = OrderedDict()
 render_locks_guard = threading.Lock()
 active_background_renders: set[str] = set()
@@ -115,7 +116,7 @@ def _default_build_state() -> dict:
     return {
         "status": "processing",
         "tiles_uploaded": 0,
-        "tiles_total": 48,
+        "tiles_total": DEFAULT_TILES_TOTAL,
         "progress": 0.0,
         "error": None,
     }
@@ -132,7 +133,7 @@ def _increment_build_tiles_uploaded(build: str):
     with BUILD_LOCK:
         current = dict(BUILD_STATUS.get(build, _default_build_state()))
         current["tiles_uploaded"] = current.get("tiles_uploaded", 0) + 1
-        tiles_total = max(0, int(current.get("tiles_total", 0) or 0))
+        tiles_total = max(0, int(current.get("tiles_total", 0)))
         if tiles_total > 0:
             current["tiles_uploaded"] = min(current["tiles_uploaded"], tiles_total)
             current["progress"] = current["tiles_uploaded"] / tiles_total
@@ -157,7 +158,7 @@ def _render_build_background(
         "processing",
         started_at=int(time.time()),
         tiles_uploaded=0,
-        tiles_total=48,
+        tiles_total=DEFAULT_TILES_TOTAL,
         progress=0.0,
         error=None,
     )
@@ -548,7 +549,7 @@ def render_cubemap(
                     "processing",
                     tile_root=tile_root,
                     tiles_uploaded=0,
-                    tiles_total=48,
+                    tiles_total=DEFAULT_TILES_TOTAL,
                     progress=0.0,
                     error=None,
                 )
