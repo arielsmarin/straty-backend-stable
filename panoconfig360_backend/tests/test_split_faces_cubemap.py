@@ -39,7 +39,7 @@ def test_configure_pyvips_concurrency_sets_env_default(monkeypatch):
 
     importlib.reload(split_faces_cubemap)
     try:
-        split_faces_cubemap._configure_pyvips_concurrency(0)
+        split_faces_cubemap.configure_pyvips_concurrency(0)
         assert os.environ["VIPS_CONCURRENCY"] == "0"
     finally:
         if original is None:
@@ -55,6 +55,6 @@ def test_configure_pyvips_concurrency_keeps_existing_env(monkeypatch):
     from panoconfig360_backend.render import split_faces_cubemap
 
     importlib.reload(split_faces_cubemap)
-    split_faces_cubemap._configure_pyvips_concurrency(0)
+    split_faces_cubemap.configure_pyvips_concurrency(0)
 
     assert os.environ["VIPS_CONCURRENCY"] == "2"

@@ -43,7 +43,8 @@ def _resize_face_for_lod(face_img: pyvips.Image, scale: float) -> pyvips.Image:
     return face_img.resize(scale, kernel="linear")
 
 
-def _configure_pyvips_concurrency(limit: int = 0) -> None:
+def configure_pyvips_concurrency(limit: int = 0) -> None:
+    """Configure libvips via VIPS_CONCURRENCY when unset; limit=0 lets libvips use all cores."""
     global _PYVIPS_CONCURRENCY_CONFIGURED
     with _PYVIPS_CONCURRENCY_LOCK:
         if _PYVIPS_CONCURRENCY_CONFIGURED:

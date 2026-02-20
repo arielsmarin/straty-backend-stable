@@ -14,7 +14,7 @@ from panoconfig360_backend.render.dynamic_stack import (
     load_config,
     build_string_from_selection,
 )
-from panoconfig360_backend.render.split_faces_cubemap import process_cubemap, _configure_pyvips_concurrency
+from panoconfig360_backend.render.split_faces_cubemap import process_cubemap, configure_pyvips_concurrency
 from panoconfig360_backend.models.render_2d import Render2DRequest
 from panoconfig360_backend.storage.factory import (
     append_jsonl,
@@ -229,7 +229,8 @@ def load_client_config(client_id: str):
 async def lifespan(app: FastAPI):
     logging.info("🚀 Iniciando backend STRATY")
     os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
-    _configure_pyvips_concurrency(0)
+    # Must run at startup so libvips reads VIPS_CONCURRENCY before render operations.
+    configure_pyvips_concurrency()
     yield
     logging.info("🧹 Encerrando backend STRATY")
 
