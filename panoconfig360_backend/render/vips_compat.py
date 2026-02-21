@@ -126,7 +126,7 @@ def ensure_rgb8(img: pyvips.Image) -> pyvips.Image:
 def resize_to_match(img: pyvips.Image, width: int, height: int) -> pyvips.Image:
     if img.width == width and img.height == height:
         return img
-    scaled = img.resize(width / img.width, vscale=height / img.height, kernel="bilinear")
+    scaled = img.resize(width / img.width, vscale=height / img.height, kernel="linear")
     return scaled
 
 
