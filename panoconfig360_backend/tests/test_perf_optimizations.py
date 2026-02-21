@@ -1,6 +1,10 @@
 """Tests for performance optimization changes."""
 
+import importlib
 import os
+import sys
+import threading
+import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -75,3 +79,60 @@ def test_vips_concurrency_env_default():
             os.environ["VIPS_CONCURRENCY"] = original
         else:
             os.environ.pop("VIPS_CONCURRENCY", None)
+
+
+def test_process_cubemap_to_memory_processes_faces_in_parallel(monkeypatch):
+    """process_cubemap_to_memory should process the 6 cubemap faces concurrently."""
+    monkeypatch.setitem(sys.modules, "pyvips", types.SimpleNamespace(Image=object))
+
+    from panoconfig360_backend.render import split_faces_cubemap
+
+    importlib.reload(split_faces_cubemap)
+    monkeypatch.setattr(split_faces_cubemap, "ensure_rgb8", lambda img: img)
+
+    # Track which thread ids process each face resize so we can verify concurrency.
+    thread_ids: list[int] = []
+    lock = threading.Lock()
+
+    class FakeImage:
+        def __init__(self, width, height):
+            self.width = width
+            self.height = height
+
+        def flip(self, _):
+            return self
+
+        def extract_area(self, _x, _y, width, height):
+            return FakeImage(width, height)
+
+        def rot90(self):
+            return self
+
+        def rot270(self):
+            return self
+
+        def resize(self, scale, **_kwargs):
+            with lock:
+                thread_ids.append(threading.get_ident())
+            return FakeImage(int(self.width * scale), int(self.height * scale))
+
+        def crop(self, *_args):
+            class FakeTile:
+                def write_to_buffer(self, fmt, **kwargs):
+                    return b"jpg"
+
+            return FakeTile()
+
+    tiles = split_faces_cubemap.process_cubemap_to_memory(
+        FakeImage(12288, 2048),
+        tile_size=512,
+        build="build",
+    )
+
+    # Correctness: all 120 tiles must be produced.
+    assert len(tiles) == 6 * ((2 * 2) + (4 * 4))
+
+    # Concurrency: LOD0 triggers 6 resize calls, each from a worker thread.
+    # At least 2 distinct thread IDs confirms the parallel execution path.
+    assert len(thread_ids) == 6
+    assert len(set(thread_ids)) >= 2, "Expected faces to be processed on multiple threads"

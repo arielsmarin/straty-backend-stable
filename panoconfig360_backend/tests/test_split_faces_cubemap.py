@@ -68,7 +68,8 @@ def test_process_cubemap_to_memory_reuses_split_and_resizes_once_per_face(monkey
     importlib.reload(split_faces_cubemap)
     monkeypatch.setattr(split_faces_cubemap, "ensure_rgb8", lambda img: img)
 
-    calls = {"resize": 0, "write": []}
+    # Use a list for the resize counter so appends are thread-safe under the GIL.
+    calls = {"resize": [], "write": []}
 
     class FakeImage:
         def __init__(self, width, height):
@@ -88,7 +89,7 @@ def test_process_cubemap_to_memory_reuses_split_and_resizes_once_per_face(monkey
             return self
 
         def resize(self, scale, **_kwargs):
-            calls["resize"] += 1
+            calls["resize"].append(scale)
             return FakeImage(int(self.width * scale), int(self.height * scale))
 
         def crop(self, *_args):
@@ -107,7 +108,7 @@ def test_process_cubemap_to_memory_reuses_split_and_resizes_once_per_face(monkey
 
     expected_tiles = 6 * ((2 * 2) + (4 * 4))
     assert len(tiles) == expected_tiles
-    assert calls["resize"] == 6
+    assert len(calls["resize"]) == 6
     assert all(
         call == (".jpg", {"Q": 72, "strip": True, "optimize_coding": False})
         for call in calls["write"]

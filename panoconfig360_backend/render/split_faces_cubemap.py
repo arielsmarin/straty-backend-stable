@@ -226,6 +226,49 @@ def process_cubemap(
         gc.collect()
 
 
+def _process_face_to_tiles(
+    face_data: tuple,
+    lod: int,
+    target_size: int,
+    face_size: int,
+    lod_tile_size: int,
+    build: str,
+    jpeg_quality: int,
+) -> tuple[list[tuple[str, bytes, int]], float]:
+    """Process a single cubemap face into in-memory tiles.
+
+    Returns the tile list and the time spent resizing (for logging).
+    pyvips releases the GIL, so this function is safe to run in threads.
+    """
+    face_img, marzipano_face = face_data
+    face_tiles: list[tuple[str, bytes, int]] = []
+    resize_elapsed = 0.0
+
+    resized = face_img
+    if target_size != face_size:
+        resize_start = time.monotonic()
+        resized = _resize_face_for_lod(face_img, target_size / face_size)
+        resize_elapsed = time.monotonic() - resize_start
+
+    cols = target_size // lod_tile_size
+    rows = target_size // lod_tile_size
+
+    for x in range(cols):
+        for y in range(rows):
+            tile = resized.crop(x * lod_tile_size, y * lod_tile_size, lod_tile_size, lod_tile_size)
+            tile_bytes = tile.write_to_buffer(
+                ".jpg",
+                Q=jpeg_quality,
+                strip=True,
+                optimize_coding=False,
+            )
+            filename = f"{build}_{marzipano_face}_{lod}_{x}_{y}.jpg"
+            face_tiles.append((filename, tile_bytes, lod))
+
+    del resized
+    return face_tiles, resize_elapsed
+
+
 def process_cubemap_to_memory(
     input_image,
     tile_size: int = 512,
@@ -278,26 +321,20 @@ def process_cubemap_to_memory(
         if lod < min_lod or lod > final_lod:
             continue
 
-        cols = target_size // lod_tile_size
-        rows = target_size // lod_tile_size
+        # Process all 6 faces concurrently — pyvips releases the GIL so threads
+        # achieve real CPU-bound parallelism across all available cores.
+        def _do_face(face_data, _lod=lod, _target=target_size, _tile_sz=lod_tile_size):
+            return _process_face_to_tiles(
+                face_data, _lod, _target, face_size, _tile_sz, build, jpeg_quality
+            )
 
-        for face_img, marzipano_face in faces:
-            resized = face_img
-            if target_size != face_size:
-                resize_start = time.monotonic()
-                resized = _resize_face_for_lod(face_img, target_size / face_size)
-                resize_lod0_elapsed += time.monotonic() - resize_start
-            for x in range(cols):
-                for y in range(rows):
-                    tile = resized.crop(x * lod_tile_size, y * lod_tile_size, lod_tile_size, lod_tile_size)
-                    tile_bytes = tile.write_to_buffer(
-                        ".jpg",
-                        Q=jpeg_quality,
-                        strip=True,
-                        optimize_coding=False,
-                    )
-                    filename = f"{build}_{marzipano_face}_{lod}_{x}_{y}.jpg"
-                    tiles.append((filename, tile_bytes, lod))
+        with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 2)) as pool:
+            results = list(pool.map(_do_face, faces))
+
+        for face_tiles, elapsed in results:
+            tiles.extend(face_tiles)
+            resize_lod0_elapsed += elapsed
+
         gc.collect()
     logger.info("Tempo resize LOD0: %.2fs", resize_lod0_elapsed)
     logger.info("Tempo tile extraction total: %.2fs", time.monotonic() - extraction_start)
