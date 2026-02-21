@@ -1,8 +1,18 @@
+import importlib
+import sys
+import types
+
 from fastapi.testclient import TestClient
 
 
+def _load_server_module():
+    sys.modules["pyvips"] = types.SimpleNamespace(Image=object, __version__="mock")
+    server = importlib.import_module("panoconfig360_backend.api.server")
+    return importlib.reload(server)
+
+
 def test_render_cache_miss_returns_202(monkeypatch):
-    from panoconfig360_backend.api import server
+    server = _load_server_module()
 
     monkeypatch.setattr(server, "load_client_config", lambda client_id: ({"scenes": {"scene": {}}}, {}))
     monkeypatch.setattr(
@@ -28,7 +38,7 @@ def test_render_cache_miss_returns_202(monkeypatch):
 
 
 def test_status_returns_processing_when_metadata_missing(monkeypatch):
-    from panoconfig360_backend.api import server
+    server = _load_server_module()
 
     def _raise_not_found(key):
         raise FileNotFoundError(key)
@@ -43,7 +53,7 @@ def test_status_returns_processing_when_metadata_missing(monkeypatch):
 
 
 def test_status_returns_done_when_metadata_ready(monkeypatch):
-    from panoconfig360_backend.api import server
+    server = _load_server_module()
 
     monkeypatch.setattr(server, "get_json", lambda key: {"status": "ready"})
 
@@ -56,7 +66,7 @@ def test_status_returns_done_when_metadata_ready(monkeypatch):
 
 
 def test_status_returns_idle_for_invalid_build():
-    from panoconfig360_backend.api import server
+    server = _load_server_module()
 
     client = TestClient(server.app)
     response = client.get("/api/status/invalid-build?client=client1&scene=scene1")
@@ -66,7 +76,7 @@ def test_status_returns_idle_for_invalid_build():
 
 
 def test_status_returns_upload_progress(monkeypatch):
-    from panoconfig360_backend.api import server
+    server = _load_server_module()
 
     def _raise_not_found(key):
         raise FileNotFoundError(key)
@@ -99,7 +109,7 @@ def test_status_returns_upload_progress(monkeypatch):
 
 
 def test_status_returns_extended_progress_fields(monkeypatch):
-    from panoconfig360_backend.api import server
+    server = _load_server_module()
 
     def _raise_not_found(key):
         raise FileNotFoundError(key)
@@ -130,3 +140,56 @@ def test_status_returns_extended_progress_fields(monkeypatch):
     finally:
         with server.BUILD_LOCK:
             server.BUILD_STATUS.pop("ab0000000000", None)
+
+
+def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypatch, tmp_path):
+    server = _load_server_module()
+
+    observed = {}
+
+    class FakeQueue:
+        def __init__(self, tile_root, upload_fn, workers, on_state_change):
+            observed["tile_root"] = tile_root
+            observed["workers"] = workers
+            observed["state_cb"] = on_state_change
+            self.uploaded_count = 3
+            self.enqueue = lambda *args, **kwargs: None
+            self.close_calls = 0
+
+        def start(self):
+            observed["started"] = True
+
+        def close_and_wait(self):
+            self.close_calls += 1
+            observed["close_calls"] = self.close_calls
+
+    def fake_process_cubemap(img, out_dir, tile_size, build, min_lod, max_lod, on_tile_ready):
+        observed["out_dir"] = out_dir
+        observed["build"] = build
+        observed["min_lod"] = min_lod
+        observed["max_lod"] = max_lod
+        assert callable(on_tile_ready)
+
+    monkeypatch.setattr(server, "TileUploadQueue", FakeQueue)
+    monkeypatch.setattr(server, "process_cubemap", fake_process_cubemap)
+
+    total = server._stream_tiles_to_storage(
+        stack_img=object(),
+        tile_root="clients/a/cubemap/s/tiles/ab12",
+        build_str="ab12",
+        tmp_dir=str(tmp_path),
+        min_lod=0,
+        max_lod=0,
+        workers=2,
+        on_state_change=lambda *_: None,
+    )
+
+    assert total == 3
+    assert observed["started"] is True
+    assert observed["tile_root"] == "clients/a/cubemap/s/tiles/ab12"
+    assert observed["workers"] == 2
+    assert observed["out_dir"] == str(tmp_path)
+    assert observed["build"] == "ab12"
+    assert observed["min_lod"] == 0
+    assert observed["max_lod"] == 0
+    assert observed["close_calls"] >= 1

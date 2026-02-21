@@ -17,7 +17,6 @@ from panoconfig360_backend.render.dynamic_stack import (
 )
 from panoconfig360_backend.render.split_faces_cubemap import (
     process_cubemap,
-    process_cubemap_to_memory,
     configure_pyvips_concurrency,
 )
 from panoconfig360_backend.models.render_2d import Render2DRequest
@@ -28,7 +27,6 @@ from panoconfig360_backend.storage.factory import (
     read_jsonl_slice,
     upload_file,
     get_public_url,
-    upload_tiles_parallel,
 )
 from panoconfig360_backend.storage.tile_upload_queue import TileUploadQueue
 from panoconfig360_backend.render.scene_context import resolve_scene_context
@@ -120,6 +118,47 @@ def _create_render_job_dir() -> str:
     return tempfile.mkdtemp(prefix="render_", dir="/tmp")
 
 
+def _stream_tiles_to_storage(
+    *,
+    stack_img,
+    tile_root: str,
+    build_str: str,
+    tmp_dir: str,
+    min_lod: int,
+    max_lod: int | None,
+    workers: int,
+    on_state_change=None,
+) -> int:
+    """Render tiles with pyvips and upload from disk queue to keep RAM bounded."""
+    uploader = TileUploadQueue(
+        tile_root=tile_root,
+        upload_fn=upload_file,
+        workers=workers,
+        on_state_change=on_state_change,
+    )
+    uploader.start()
+
+    try:
+        process_cubemap(
+            stack_img,
+            tmp_dir,
+            tile_size=512,
+            build=build_str,
+            min_lod=min_lod,
+            max_lod=max_lod,
+            on_tile_ready=uploader.enqueue,
+        )
+        del stack_img
+        gc.collect()
+        uploader.close_and_wait()
+        return uploader.uploaded_count
+    finally:
+        try:
+            uploader.close_and_wait()
+        except Exception:
+            logging.exception("❌ Erro ao encerrar fila de upload de tiles para build %s", build_str)
+
+
 def _default_build_state() -> dict:
     return {
         "status": "processing",
@@ -198,38 +237,30 @@ def _render_build_background(
             assets_root=ctx["assets_root"],
         )
         logging.info("Tempo stack: %.2fs", time.monotonic() - stack_start)
-        tiles_with_lod = process_cubemap_to_memory(
-            stack_img,
-            tile_size=512,
-            build=build_str,
+        uploaded_tiles = _stream_tiles_to_storage(
+            stack_img=stack_img,
+            tile_root=tile_root,
+            build_str=build_str,
+            tmp_dir=job_tmp_dir,
             min_lod=min_lod,
+            max_lod=None,
+            workers=max(2, _TILE_WORKERS),
+            on_state_change=_tile_state_event_writer(tile_root, build_str),
         )
-        del stack_img
         cpu_elapsed = time.monotonic() - cpu_start
         logging.info("⏱️ Tempo render CPU (%s): %.2fs",
                      render_key, cpu_elapsed)
 
-        tiles = [(f"{tile_root}/{filename}", tile_bytes)
-                 for filename, tile_bytes, _ in tiles_with_lod]
-        tiles_total = len(tiles)
+        tiles_total = uploaded_tiles
         _set_build_status(
             build_str,
-            "uploading",
+            "processing",
             tile_root=tile_root,
-            tiles_uploaded=0,
+            tiles_uploaded=tiles_total,
             tiles_total=tiles_total,
-            progress=0.0,
+            progress=1.0,
             error=None,
         )
-        upload_start = time.monotonic()
-        upload_tiles_parallel(
-            tiles,
-            max_workers=25,
-            on_tile_uploaded=lambda _: _increment_build_tiles_uploaded(build_str),
-        )
-        upload_elapsed = time.monotonic() - upload_start
-        logging.info("⏱️ Tempo upload total (%s): %.2fs",
-                     render_key, upload_elapsed)
 
         metadata_payload = {
             "client": client_id,
@@ -238,7 +269,7 @@ def _render_build_background(
             "tileRoot": tile_root,
             "generated_at": int(time.time()),
             "status": "ready",
-            "tiles_count": len(tiles),
+            "tiles_count": tiles_total,
         }
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
             json.dump(metadata_payload, tmp)
@@ -301,16 +332,7 @@ def _render_remaining_lods(
             ctx = resolve_scene_context(project, scene_id)
 
         tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_bg_")
-        uploader = None
         try:
-            uploader = TileUploadQueue(
-                tile_root=tile_root,
-                upload_fn=upload_file,
-                workers=4,
-                on_state_change=_tile_state_event_writer(tile_root, build_str),
-            )
-            uploader.start()
-
             stack_img = stack_layers_image_only(
                 scene_id=scene_id,
                 layers=ctx["layers"],
@@ -318,17 +340,17 @@ def _render_remaining_lods(
                 assets_root=ctx["assets_root"],
             )
 
-            process_cubemap(
-                stack_img,
-                tmp_dir,
-                tile_size=512,
-                build=build_str,
+            uploaded_count = _stream_tiles_to_storage(
+                stack_img=stack_img,
+                tile_root=tile_root,
+                build_str=build_str,
+                tmp_dir=tmp_dir,
                 min_lod=1,
-                on_tile_ready=uploader.enqueue,
+                max_lod=None,
+                workers=4,
+                on_state_change=_tile_state_event_writer(tile_root, build_str),
             )
-            del stack_img
-            uploader.close_and_wait()
-            uploaded_count = uploader.uploaded_count
+
             metadata_payload = {
                 "client": client_id,
                 "scene": scene_id,
@@ -343,7 +365,7 @@ def _render_remaining_lods(
                     "uploading": 0,
                     "uploaded": 0,
                     "fading-in": 0,
-                    "visible": len(uploader.states),
+                    "visible": uploaded_count,
                 },
             }
             meta_path = _write_metadata_file(metadata_payload, tmp_dir)
@@ -354,12 +376,6 @@ def _render_remaining_lods(
                 uploaded_count,
             )
         finally:
-            if uploader is not None:
-                try:
-                    uploader.close_and_wait()
-                except Exception:
-                    logging.exception(
-                        "❌ Erro ao encerrar fila de upload em background (%s)", render_key)
             shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception:
         logging.exception(
@@ -625,42 +641,26 @@ def render_cubemap(
                         selection=selection,
                         assets_root=job_assets_root,
                     )
-                    lod0_tiles_with_lod = process_cubemap_to_memory(
-                        stack_img,
-                        tile_size=512,
-                        build=build_str,
+                    lod0_uploaded = _stream_tiles_to_storage(
+                        stack_img=stack_img,
+                        tile_root=tile_root,
+                        build_str=build_str,
+                        tmp_dir=job_tmp_dir,
                         min_lod=0,
                         max_lod=0,
+                        workers=max(2, _TILE_WORKERS),
+                        on_state_change=_tile_state_event_writer(tile_root, build_str),
                     )
-                    del stack_img
-                    lod0_tiles = [
-                        (f"{tile_root}/{filename}", tile_bytes)
-                        for filename, tile_bytes, _ in lod0_tiles_with_lod
-                    ]
-                    lod0_total = len(lod0_tiles)
+                    lod0_total = lod0_uploaded
                     if lod0_total > 0:
-                        _set_build_status(
-                            build_str,
-                            "uploading",
-                            tile_root=tile_root,
-                            tiles_uploaded=0,
-                            tiles_total=max(DEFAULT_TILES_TOTAL, lod0_total),
-                            progress=0.0,
-                            percent_complete=0.0,
-                            faces_ready=False,
-                            tiles_ready=False,
-                            lod_ready=-1,
-                            error=None,
-                        )
-                        upload_tiles_parallel(
-                            lod0_tiles,
-                            max_workers=8,
-                            on_tile_uploaded=lambda _: _increment_build_tiles_uploaded(build_str),
-                        )
                         _set_build_status(
                             build_str,
                             "processing",
                             tile_root=tile_root,
+                            tiles_uploaded=lod0_total,
+                            tiles_total=max(DEFAULT_TILES_TOTAL, lod0_total),
+                            progress=lod0_total / max(DEFAULT_TILES_TOTAL, lod0_total),
+                            percent_complete=lod0_total / max(DEFAULT_TILES_TOTAL, lod0_total),
                             faces_ready=True,
                             tiles_ready=True,
                             lod_ready=0,
