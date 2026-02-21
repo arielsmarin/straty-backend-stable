@@ -25,13 +25,12 @@ def construct_r2_url(asset_path: Path, extension: str) -> str:
         Full R2 public URL
     """
     candidate = asset_path.with_suffix(extension)
-    relative_path = str(candidate)
-    
-    # Strip 'panoconfig360_cache/' prefix to get the R2 key
-    if relative_path.startswith("panoconfig360_cache/"):
-        r2_key = relative_path.replace("panoconfig360_cache/", "", 1)
+    parts = candidate.as_posix().split("/")
+    if "panoconfig360_cache" in parts:
+        cache_idx = parts.index("panoconfig360_cache")
+        r2_key = "/".join(parts[cache_idx + 1:])
     else:
-        r2_key = relative_path
+        r2_key = candidate.as_posix()
     
     return f"{R2_PUBLIC_URL}/{r2_key}"
 
