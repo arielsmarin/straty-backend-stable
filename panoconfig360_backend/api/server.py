@@ -1,4 +1,5 @@
 # api/server.py
+import gc
 import os
 import json
 import logging
@@ -115,6 +116,10 @@ def _tiles_base_url() -> str:
     return get_public_url("").rstrip("/")
 
 
+def _create_render_job_dir() -> str:
+    return tempfile.mkdtemp(prefix="render_", dir="/tmp")
+
+
 def _default_build_state() -> dict:
     return {
         "status": "processing",
@@ -161,6 +166,7 @@ def _render_build_background(
     tile_root: str,
     metadata_key: str,
     min_lod: int = 0,
+    job_tmp_dir: str | None = None,
 ):
     render_key = f"{client_id}:{scene_id}:{build_str}"
     total_start = time.monotonic()
@@ -175,8 +181,14 @@ def _render_build_background(
     )
 
     try:
+        if job_tmp_dir is None:
+            job_tmp_dir = _create_render_job_dir()
         project, _ = load_client_config(client_id)
-        ctx = resolve_scene_context(project, scene_id)
+        ctx = resolve_scene_context(
+            project,
+            scene_id,
+            assets_root=Path(job_tmp_dir) / "panoconfig360_cache" / "clients" / client_id / "scenes" / scene_id,
+        )
         cpu_start = time.monotonic()
         stack_start = time.monotonic()
         stack_img = stack_layers_image_only(
@@ -261,6 +273,9 @@ def _render_build_background(
         total_elapsed = time.monotonic() - total_start
         logging.info("⏱️ Tempo total pipeline (%s): %.2fs",
                      render_key, total_elapsed)
+        if job_tmp_dir:
+            shutil.rmtree(job_tmp_dir, ignore_errors=True)
+        gc.collect()
         with active_background_guard:
             active_background_renders.discard(render_key)
 
@@ -528,7 +543,6 @@ def render_cubemap(
         raise HTTPException(400, f"Cena inválida: {e}")
 
     scene_layers = ctx["layers"]
-    assets_root = ctx["assets_root"]
     scene_index = ctx["scene_index"]
 
     # ======================================================
@@ -602,12 +616,14 @@ def render_cubemap(
                     error=None,
                 )
                 min_lod_for_background = 0
+                job_tmp_dir = _create_render_job_dir()
+                job_assets_root = Path(job_tmp_dir) / "panoconfig360_cache" / "clients" / client_id / "scenes" / scene_id
                 try:
                     stack_img = stack_layers_image_only(
                         scene_id=scene_id,
                         layers=scene_layers,
                         selection=selection,
-                        assets_root=assets_root,
+                        assets_root=job_assets_root,
                     )
                     lod0_tiles_with_lod = process_cubemap_to_memory(
                         stack_img,
@@ -671,6 +687,7 @@ def render_cubemap(
                     tile_root,
                     metadata_key,
                     min_lod_for_background,
+                    job_tmp_dir,
                 )
                 logging.info("🧵 Background task agendada para %s", render_key)
 
@@ -812,7 +829,6 @@ def render_2d(payload: Render2DRequest):
         raise HTTPException(400, f"Cena inválida: {e}")
 
     scene_layers = ctx["layers"]
-    assets_root = ctx["assets_root"]
     scene_index = ctx["scene_index"]
 
     build_str = build_string_from_selection(
@@ -842,13 +858,15 @@ def render_2d(payload: Render2DRequest):
     start = time.monotonic()
 
     output_path = None
+    job_tmp_dir = _create_render_job_dir()
+    job_assets_root = Path(job_tmp_dir) / "panoconfig360_cache" / "clients" / client_id / "scenes" / scene_id
 
     try:
         img = stack_layers_image_only(
             scene_id=scene_id,
             layers=scene_layers,
             selection=selection,
-            assets_root=assets_root,
+            assets_root=job_assets_root,
             asset_prefix="2d_",
         )
 
@@ -883,6 +901,8 @@ def render_2d(payload: Render2DRequest):
     finally:
         if output_path is not None and os.path.exists(output_path):
             os.remove(output_path)
+        shutil.rmtree(job_tmp_dir, ignore_errors=True)
+        gc.collect()
 
 
 @app.get("/api/health")

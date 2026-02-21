@@ -95,3 +95,18 @@ def test_resolve_asset_url_construction():
         
         expected_url = f"{test_url}/clients/monte-negro/scenes/kitchen/base_kitchen.jpg"
         assert remote_url == expected_url
+
+
+def test_resolve_asset_url_construction_from_absolute_temp_path():
+    """Absolute temp paths still map to the same R2 key when containing panoconfig360_cache."""
+    from panoconfig360_backend.render.vips_compat import construct_r2_url
+    from pathlib import Path
+    from unittest.mock import patch
+
+    test_url = "https://test.r2.dev"
+    absolute_base = Path("/tmp/render_abc/panoconfig360_cache/clients/demo/scenes/s1/base_s1")
+
+    with patch("panoconfig360_backend.render.vips_compat.R2_PUBLIC_URL", test_url):
+        remote_url = construct_r2_url(absolute_base, ".png")
+
+    assert remote_url == f"{test_url}/clients/demo/scenes/s1/base_s1.png"

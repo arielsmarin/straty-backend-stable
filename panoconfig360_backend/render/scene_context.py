@@ -3,7 +3,7 @@ from pathlib import Path
 ASSETS_ROOT = Path("panoconfig360_cache/clients")
 
 
-def resolve_scene_context(project: dict, scene_id: str | None):
+def resolve_scene_context(project: dict, scene_id: str | None, assets_root: Path | None = None):
     client_id = project.get("client_id")
     if not client_id or not isinstance(client_id, str):
         raise ValueError("client_id inválido no project")
@@ -18,9 +18,11 @@ def resolve_scene_context(project: dict, scene_id: str | None):
 
     scene = scenes[scene_id]
 
+    root = assets_root if assets_root is not None else ASSETS_ROOT / client_id / "scenes" / scene_id
+
     return {
         "scene_id": scene_id,
         "scene_index": scene.get("scene_index", 0),
         "layers": scene["layers"],
-        "assets_root": ASSETS_ROOT / client_id / "scenes" / scene_id,
+        "assets_root": root,
     }
