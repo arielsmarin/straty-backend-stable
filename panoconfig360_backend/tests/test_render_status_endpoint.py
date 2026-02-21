@@ -193,3 +193,32 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
     assert observed["min_lod"] == 0
     assert observed["max_lod"] == 0
     assert observed["close_calls"] >= 1
+
+
+def test_render_returns_queued_when_capacity_is_full(monkeypatch):
+    server = _load_server_module()
+
+    monkeypatch.setattr(server, "load_client_config", lambda client_id: ({"scenes": {"scene": {}}}, {}))
+    monkeypatch.setattr(
+        server,
+        "resolve_scene_context",
+        lambda project, scene_id: {"layers": [], "assets_root": "", "scene_index": 0},
+    )
+    monkeypatch.setattr(server, "build_string_from_selection", lambda *args, **kwargs: "ab12cd34")
+    monkeypatch.setattr(server, "exists", lambda key: False)
+
+    class BusySlots:
+        def acquire(self, blocking=False):
+            return False
+
+    monkeypatch.setattr(server, "_active_render_pipeline_slots", BusySlots())
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/render",
+        json={"client": "client1", "scene": "scene1", "selection": {"a": 1}},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    assert response.json()["reason"] == "render_capacity"

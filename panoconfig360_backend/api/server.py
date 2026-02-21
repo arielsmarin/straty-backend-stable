@@ -195,6 +195,8 @@ def _increment_build_tiles_uploaded(build: str):
 
 
 _TILE_WORKERS = int(os.getenv("TILE_WORKERS", "4"))
+_MAX_ACTIVE_RENDER_PIPELINES = max(1, int(os.getenv("MAX_ACTIVE_RENDER_PIPELINES", "1")))
+_active_render_pipeline_slots = threading.BoundedSemaphore(_MAX_ACTIVE_RENDER_PIPELINES)
 
 
 def _render_build_background(
@@ -307,6 +309,7 @@ def _render_build_background(
         if job_tmp_dir:
             shutil.rmtree(job_tmp_dir, ignore_errors=True)
         gc.collect()
+        _active_render_pipeline_slots.release()
         with active_background_guard:
             active_background_renders.discard(render_key)
 
@@ -617,6 +620,28 @@ def render_cubemap(
         with active_background_guard:
             already_processing = render_key in active_background_renders
             if not already_processing:
+                if not _active_render_pipeline_slots.acquire(blocking=False):
+                    _set_build_status(
+                        build_str,
+                        "queued",
+                        tile_root=tile_root,
+                        queue_reason="render_capacity",
+                        error=None,
+                    )
+                    return JSONResponse(
+                        status_code=202,
+                        content={
+                            "status": "queued",
+                            "build": build_str,
+                            "reason": "render_capacity",
+                            "tiles": {
+                                "baseUrl": _tiles_base_url(),
+                                "tileRoot": tile_root,
+                                "pattern": f"{build_str}_{{f}}_{{z}}_{{x}}_{{y}}.jpg",
+                                "build": build_str,
+                            },
+                        },
+                    )
                 active_background_renders.add(render_key)
                 _set_build_status(
                     build_str,
@@ -678,17 +703,21 @@ def render_cubemap(
                         lod_ready=-1,
                         error="lod0_sync_failed",
                     )
-                background_tasks.add_task(
-                    _render_build_background,
-                    client_id,
-                    scene_id,
-                    selection,
-                    build_str,
-                    tile_root,
-                    metadata_key,
-                    min_lod_for_background,
-                    job_tmp_dir,
-                )
+                try:
+                    background_tasks.add_task(
+                        _render_build_background,
+                        client_id,
+                        scene_id,
+                        selection,
+                        build_str,
+                        tile_root,
+                        metadata_key,
+                        min_lod_for_background,
+                        job_tmp_dir,
+                    )
+                except Exception:
+                    _active_render_pipeline_slots.release()
+                    raise
                 logging.info("🧵 Background task agendada para %s", render_key)
 
     tiles = {

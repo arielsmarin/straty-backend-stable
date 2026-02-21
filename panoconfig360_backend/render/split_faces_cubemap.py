@@ -28,6 +28,13 @@ MARZIPANO_FACE_MAP = {
 }
 
 
+def _face_workers() -> int:
+    configured = os.getenv("CUBEMAP_FACE_WORKERS")
+    if configured is None:
+        return max(2, min(6, os.cpu_count() or 2))
+    return max(1, min(6, int(configured)))
+
+
 def _to_vips_image(img) -> pyvips.Image:
     if isinstance(img, VipsImageCompat):
         return img.image
@@ -54,6 +61,17 @@ def configure_pyvips_concurrency(limit: int = 0) -> None:
         logger.info("pyvips version detected: %s", getattr(pyvips, "__version__", "unknown"))
         os.environ.setdefault("VIPS_CONCURRENCY", str(limit))
         logger.info("Configured libvips concurrency via VIPS_CONCURRENCY=%s", os.environ["VIPS_CONCURRENCY"])
+        max_ops = int(os.getenv("VIPS_CACHE_MAX_OPS", "200"))
+        max_mem_mb = int(os.getenv("VIPS_CACHE_MAX_MEM_MB", "256"))
+        if hasattr(pyvips, "cache_set_max"):
+            pyvips.cache_set_max(max_ops)
+        if hasattr(pyvips, "cache_set_max_mem"):
+            pyvips.cache_set_max_mem(max_mem_mb * 1024 * 1024)
+        logger.info(
+            "Configured libvips cache: max_ops=%s max_mem_mb=%s",
+            max_ops,
+            max_mem_mb,
+        )
         _PYVIPS_CONCURRENCY_CONFIGURED = True
 
 
@@ -219,7 +237,7 @@ def process_cubemap(
             del resized
 
         # Process faces concurrently — libvips releases the GIL
-        with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 2)) as pool:
+        with ThreadPoolExecutor(max_workers=_face_workers()) as pool:
             list(pool.map(_process_face, faces))
 
         # Free memory after each LOD level
@@ -328,7 +346,7 @@ def process_cubemap_to_memory(
                 face_data, _lod, _target, face_size, _tile_sz, build, jpeg_quality
             )
 
-        with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 2)) as pool:
+        with ThreadPoolExecutor(max_workers=_face_workers()) as pool:
             results = list(pool.map(_do_face, faces))
 
         for face_tiles, elapsed in results:

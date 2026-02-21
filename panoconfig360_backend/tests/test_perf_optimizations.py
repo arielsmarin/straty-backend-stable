@@ -136,3 +136,43 @@ def test_process_cubemap_to_memory_processes_faces_in_parallel(monkeypatch):
     # At least 2 distinct thread IDs confirms the parallel execution path.
     assert len(thread_ids) == 6
     assert len(set(thread_ids)) >= 2, "Expected faces to be processed on multiple threads"
+
+
+def test_face_workers_env_is_clamped(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pyvips", types.SimpleNamespace(Image=object))
+    from panoconfig360_backend.render import split_faces_cubemap
+    importlib.reload(split_faces_cubemap)
+
+    monkeypatch.setenv("CUBEMAP_FACE_WORKERS", "99")
+    assert split_faces_cubemap._face_workers() == 6
+
+    monkeypatch.setenv("CUBEMAP_FACE_WORKERS", "0")
+    assert split_faces_cubemap._face_workers() == 1
+
+
+def test_configure_pyvips_concurrency_sets_cache_limits(monkeypatch):
+    calls = {}
+
+    class FakePyvips:
+        __version__ = "mock"
+        Image = object
+
+        @staticmethod
+        def cache_set_max(value):
+            calls["max_ops"] = value
+
+        @staticmethod
+        def cache_set_max_mem(value):
+            calls["max_mem"] = value
+
+    monkeypatch.setitem(sys.modules, "pyvips", FakePyvips)
+    from panoconfig360_backend.render import split_faces_cubemap
+    importlib.reload(split_faces_cubemap)
+
+    monkeypatch.setenv("VIPS_CACHE_MAX_OPS", "123")
+    monkeypatch.setenv("VIPS_CACHE_MAX_MEM_MB", "64")
+
+    split_faces_cubemap.configure_pyvips_concurrency()
+
+    assert calls["max_ops"] == 123
+    assert calls["max_mem"] == 64 * 1024 * 1024
