@@ -46,7 +46,7 @@ def test_storage_factory_accepts_local_backend(monkeypatch):
 
 
 def test_tile_upload_lifecycle_logging(tmp_path, caplog):
-    """Tile upload must log: generated, upload started, upload completed, local file removed."""
+    """Tile upload must log queueing and upload lifecycle without generation logs."""
     uploaded = []
 
     def fake_upload(src: str, key: str, content_type: str):
@@ -67,7 +67,8 @@ def test_tile_upload_lifecycle_logging(tmp_path, caplog):
         queue.close_and_wait()
 
     log_text = caplog.text
-    assert "tile generated" in log_text
+    assert "tile generated" not in log_text
+    assert "tile queued" in log_text
     assert "upload started" in log_text
     assert "upload completed" in log_text
     assert "local file removed" in log_text

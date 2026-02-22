@@ -99,7 +99,7 @@ class TileUploadQueue:
         """
         self._set_state(filename, "generated")
         self._emit_state(filename, "generated", lod)
-        logging.info("🧩 tile generated: %s", filename)
+        logging.info("📋 tile queued: %s", filename)
 
         with self._pending_lock:
             if self._uploads_started:
