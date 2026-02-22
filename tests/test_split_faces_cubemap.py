@@ -112,7 +112,7 @@ def test_process_cubemap_to_memory_reuses_split_and_resizes_once_per_face(monkey
     # LOD0 resizes from 2048→1024 for each of 6 faces
     assert len(calls["resize"]) == 6
     assert all(
-        call == (".jpg", {"Q": 70, "strip": True, "optimize_coding": False})
+        call == (".jpg", {"Q": 85, "strip": True, "optimize_coding": True})
         for call in calls["write"]
     )
 
