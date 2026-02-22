@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 _PYVIPS_CONCURRENCY_CONFIGURED = False
 _PYVIPS_CONCURRENCY_LOCK = threading.Lock()
 
+# 4 CPUs × 100 000 µs per 100 ms period
+_MIN_RECOMMENDED_CPU_QUOTA = 4 * 100_000
+# Upper-bound for libvips thread-pool when auto-detecting
+_MAX_DEFAULT_CONCURRENCY = 4
+
 MARZIPANO_FACE_MAP = {
     "px": "r",
     "nx": "l",
@@ -66,7 +71,7 @@ def _log_cgroup_cpu_limit() -> None:
         parts = raw.split()
         if len(parts) == 2 and parts[0] != "max":
             quota = int(parts[0])
-            if quota < 400_000:
+            if quota < _MIN_RECOMMENDED_CPU_QUOTA:
                 logger.warning(
                     "Container CPU quota %d < 400000 — fewer than 4 effective CPUs",
                     quota,
@@ -96,7 +101,7 @@ def configure_pyvips_concurrency(limit: int = 0) -> None:
         # the library was already initialised before the env-var was written.
         concurrency_value = int(os.environ["VIPS_CONCURRENCY"])
         if concurrency_value == 0:
-            concurrency_value = min(4, cpu_count)
+            concurrency_value = min(_MAX_DEFAULT_CONCURRENCY, cpu_count)
         if hasattr(pyvips, "concurrency_set"):
             pyvips.concurrency_set(concurrency_value)
 
