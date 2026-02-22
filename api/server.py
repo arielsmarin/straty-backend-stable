@@ -192,7 +192,7 @@ def _increment_build_tiles_uploaded(build: str):
         BUILD_STATUS[build] = current
 
 
-_TILE_WORKERS = int(os.getenv("TILE_WORKERS", "4"))
+_TILE_WORKERS = int(os.getenv("TILE_WORKERS", str(min(8, (os.cpu_count() or 4) * 2))))
 _MAX_ACTIVE_RENDER_PIPELINES = max(1, int(os.getenv("MAX_ACTIVE_RENDER_PIPELINES", "1")))
 _active_render_pipeline_slots = threading.BoundedSemaphore(_MAX_ACTIVE_RENDER_PIPELINES)
 
