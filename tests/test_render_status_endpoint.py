@@ -1,6 +1,7 @@
 import importlib
 import sys
 import types
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -158,9 +159,12 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
             observed["tile_root"] = tile_root
             observed["workers"] = workers
             observed["state_cb"] = on_state_change
-            self.uploaded_count = 3
-            self.enqueue = lambda *args, **kwargs: None
+            self.uploaded_count = 0
             self.close_calls = 0
+
+        def enqueue(self, _path, filename, _lod):
+            observed.setdefault("enqueued", []).append(filename)
+            self.uploaded_count += 1
 
         def start(self):
             observed["started"] = True
@@ -194,7 +198,7 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
         on_state_change=lambda *_: None,
     )
 
-    assert total == 3
+    assert total == 2
     assert observed["started"] is True
     assert observed["tile_root"] == "clients/a/cubemap/s/tiles/ab12"
     assert observed["workers"] == 2
@@ -202,6 +206,7 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
     assert observed["build"] == "ab12"
     assert observed["min_lod"] == 0
     assert observed["max_lod"] == 0
+    assert set(observed["enqueued"]) == {"ab12_b_1_0_0.jpg", "ab12_f_0_0_0.jpg"}
     assert observed["close_calls"] >= 1
 
 
