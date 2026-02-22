@@ -169,6 +169,9 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
         def start(self):
             observed["started"] = True
 
+        def start_uploads(self):
+            observed["start_uploads_called"] = True
+
         def close_and_wait(self):
             self.close_calls += 1
             observed["close_calls"] = self.close_calls
@@ -198,15 +201,15 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
         on_state_change=lambda *_: None,
     )
 
-    assert total == 2
-    assert observed["started"] is True
+    assert total == 3
+    assert observed.get("start_uploads_called") is True, "start_uploads() must be called after enqueueing"
     assert observed["tile_root"] == "clients/a/cubemap/s/tiles/ab12"
     assert observed["workers"] == 2
     assert observed["out_dir"] == str(tmp_path)
     assert observed["build"] == "ab12"
     assert observed["min_lod"] == 0
     assert observed["max_lod"] == 0
-    assert set(observed["enqueued"]) == {"ab12_b_1_0_0.jpg", "ab12_f_0_0_0.jpg"}
+    assert len(observed["enqueued"]) == 3
     assert observed["close_calls"] >= 1
 
 

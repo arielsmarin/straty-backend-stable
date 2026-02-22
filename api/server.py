@@ -154,16 +154,16 @@ def _stream_tiles_to_storage(
     logging.info("✅ Fase 1 concluída: %d tiles gerados para build %s", len(tile_files), build_str)
 
     # Phase 2: upload all generated tiles in parallel
-    logging.info("⬆️ Fase 2 — upload paralelo de %d tiles para build %s", len(tile_files), build_str)
+    logging.info("⬆️ Fase 2 — iniciando upload de %d tiles para build %s", len(tile_files), build_str)
     uploader = TileUploadQueue(
         tile_root=tile_root,
         upload_fn=upload_file,
         workers=workers,
         on_state_change=on_state_change,
     )
-    uploader.start()
 
     try:
+        # Enqueue all tiles first (no uploads start yet)
         for tile_path in tile_files:
             try:
                 parts = tile_path.stem.split("_")
@@ -173,6 +173,8 @@ def _stream_tiles_to_storage(
                 lod = 0
             uploader.enqueue(tile_path, tile_path.name, lod)
 
+        # Start parallel uploads after all tiles are queued
+        uploader.start_uploads()
         uploader.close_and_wait()
         return uploader.uploaded_count
     finally:
