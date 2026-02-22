@@ -1,0 +1,92 @@
+# Render.com Blueprint Configuration
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: panoconfig360-api
+    env: python
+    region: oregon  # Choose: oregon, frankfurt, singapore
+    plan: starter  # Choose: free, starter, standard
+    branch: main
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r panoconfig360_backend/requirements.txt
+    startCommand: |
+      gunicorn -k uvicorn.workers.UvicornWorker \
+        api.server:app \
+        --bind 0.0.0.0:$PORT \
+        --workers 1 \
+        --threads 1 \
+        --timeout 120 \
+        --graceful-timeout 120
+    healthCheckPath: /health
+    autoDeploy: true
+    
+    envVars:
+      # Environment mode
+      - key: ENVIRONMENT
+        value: production
+      
+      # Storage backend
+      - key: STORAGE_BACKEND
+        value: r2  # or "local" for development
+      
+      # R2 Storage configuration (set these as secrets in Render dashboard)
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: panoconfig360-tiles
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_PUBLIC_URL
+        value: https://cdn.example.com  # Replace with your CDN domain
+      
+      # CORS configuration
+      - key: CORS_ORIGINS
+        value: https://app.example.com,https://*.pages.dev,http://localhost:3000
+      
+      # Performance tuning
+      - key: TILE_WORKERS
+        value: 1
+      - key: MAX_TILE_CONCURRENCY
+        value: 1
+      - key: VIPS_CONCURRENCY
+        value: 0
+      
+      # Rate limiting
+      - key: RATE_LIMIT_ENABLED
+        value: true
+      - key: RATE_LIMIT_REQUESTS
+        value: 10
+      - key: RATE_LIMIT_PERIOD
+        value: 1
+      
+      # Request size limits
+      - key: MAX_UPLOAD_SIZE_MB
+        value: 10
+      
+      # Logging
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      
+      # Optional: JWT authentication
+      # - key: JWT_SECRET_KEY
+      #   generateValue: true
+      # - key: JWT_ALGORITHM
+      #   value: HS256
+      # - key: JWT_EXPIRATION_MINUTES
+      #   value: 60
+      
+      # Optional: Error tracking (Sentry)
+      # - key: SENTRY_DSN
+      #   sync: false
+      
+      # Optional: API keys (comma-separated)
+      # - key: API_KEYS
+      #   sync: false
