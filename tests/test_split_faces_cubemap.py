@@ -276,12 +276,15 @@ def test_process_cubemap_to_memory_tile_naming_and_lod_counts(monkeypatch):
         assert build_str == "000804000000"
         assert face in valid_faces, f"Invalid face: {face}"
         assert lod_str in ("0", "1"), f"Invalid LOD: {lod_str}"
-        int(x_str)  # must be numeric
-        int(y_str)  # must be numeric
+        assert int(lod_str) == lod, f"LOD mismatch: filename={lod_str} tuple={lod}"
+        x, y = int(x_str), int(y_str)
 
+        # Validate tile coordinate ranges per LOD
         if lod == 0:
+            assert 0 <= x <= 1 and 0 <= y <= 1, f"LOD0 coords out of range: {x},{y}"
             lod0_count += 1
         elif lod == 1:
+            assert 0 <= x <= 3 and 0 <= y <= 3, f"LOD1 coords out of range: {x},{y}"
             lod1_count += 1
 
     # LOD0: 6 faces × 2×2 = 24; LOD1: 6 faces × 4×4 = 96
