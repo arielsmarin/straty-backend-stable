@@ -44,7 +44,9 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parents[1].parent
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "https://pub-4503b4acd02140cfb69ab3886530d45b.r2.dev")
 CLIENT_CONFIG_BUCKET = os.getenv("R2_CONFIG_BUCKET", "panoconfig360")
-TILE_RE = re.compile(r"^[0-9a-z]+_[fblrud]_\d+_\d+_\d+\.jpg$")
+TILE_RE = re.compile(
+    r"^(?P<build>[0-9a-z]+)_[fblrud]_(?P<lod>\d+)_(?P<x>\d+)_(?P<y>\d+)\.jpg$"
+)
 TILE_ROOT_RE = re.compile(
     r"^clients/[a-z0-9\-]+/cubemap/[a-z0-9\-]+/tiles/[0-9a-z]+$")
 
@@ -147,11 +149,16 @@ def _stream_tiles_to_storage(
             on_tile_ready=None,
         )
 
-        for tile_path in sorted(Path(tmp_dir).glob("*.jpg")):
+        for tile_path in Path(tmp_dir).glob("*.jpg"):
             filename = tile_path.name
-            if not TILE_RE.match(filename):
+            match = TILE_RE.match(filename)
+            if match is None:
                 continue
-            lod = int(filename.split("_")[2])
+            try:
+                lod = int(match.group("lod"))
+            except ValueError:
+                logging.warning("⚠️ Ignorando tile com nome inválido: %s", filename)
+                continue
             uploader.enqueue(tile_path, filename, lod)
 
         del stack_img

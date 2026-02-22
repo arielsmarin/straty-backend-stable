@@ -204,7 +204,7 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
     assert observed["build"] == "ab12"
     assert observed["min_lod"] == 0
     assert observed["max_lod"] == 0
-    assert observed["enqueued"] == ["ab12_b_1_0_0.jpg", "ab12_f_0_0_0.jpg"]
+    assert set(observed["enqueued"]) == {"ab12_b_1_0_0.jpg", "ab12_f_0_0_0.jpg"}
     assert observed["close_calls"] >= 1
 
 
