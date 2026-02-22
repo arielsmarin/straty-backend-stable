@@ -106,19 +106,19 @@ def test_process_cubemap_to_memory_reuses_split_and_resizes_once_per_face(monkey
         build="build",
     )
 
-    # FACEsize=2048, tileSize=512 → 6 faces × 4×4 = 96 tiles, single LOD
-    expected_tiles = 6 * (4 * 4)
+    # Fixed LOD: LOD0 1024/512 (2×2) + LOD1 2048/512 (4×4) = 20 tiles/face × 6 = 120
+    expected_tiles = 6 * (2 * 2 + 4 * 4)
     assert len(tiles) == expected_tiles
-    # No resize needed: target_size == face_size
-    assert len(calls["resize"]) == 0
+    # LOD0 resizes from 2048→1024 for each of 6 faces
+    assert len(calls["resize"]) == 6
     assert all(
-        call == (".jpg", {"Q": 72, "strip": True, "optimize_coding": False})
+        call == (".jpg", {"Q": 70, "strip": True, "optimize_coding": False})
         for call in calls["write"]
     )
 
 
-def test_process_cubemap_to_memory_1024_produces_24_tiles(monkeypatch):
-    """FACEsize=1024 with tileSize=512 → 6 faces × 2×2 = 24 tiles."""
+def test_process_cubemap_to_memory_1024_produces_120_tiles(monkeypatch):
+    """FACEsize=1024 with fixed LOD configs → LOD0 no resize (2×2) + LOD1 resize up (4×4) = 120 tiles."""
     monkeypatch.setitem(sys.modules, "pyvips", types.SimpleNamespace(Image=object))
 
     from render import split_faces_cubemap
@@ -163,10 +163,10 @@ def test_process_cubemap_to_memory_1024_produces_24_tiles(monkeypatch):
         build="build",
     )
 
-    # FACEsize=1024, tileSize=512 → 6 faces × 2×2 = 24 tiles
-    assert len(tiles) == 24
-    # No resize needed: target_size == face_size
-    assert len(calls["resize"]) == 0
+    # Fixed LOD: LOD0 1024/512 (2×2) + LOD1 2048/512 (4×4) = 20 tiles/face × 6 = 120
+    assert len(tiles) == 120
+    # LOD0: no resize (face_size==1024==target); LOD1: resize 1024→2048 for 6 faces
+    assert len(calls["resize"]) == 6
 
 
 def test_process_cubemap_to_memory_no_256_or_512_face_tiles(monkeypatch):
@@ -217,3 +217,76 @@ def test_process_cubemap_to_memory_no_256_or_512_face_tiles(monkeypatch):
     # No face should be resized to 256 or 512
     for size in tile_sizes_seen:
         assert size not in (256, 512), f"Unexpected face resize to {size}"
+
+
+def test_process_cubemap_to_memory_tile_naming_and_lod_counts(monkeypatch):
+    """Validate tile names follow BUILD_FACE_LOD_X_Y.jpg and LOD counts are correct."""
+    monkeypatch.setitem(sys.modules, "pyvips", types.SimpleNamespace(Image=object))
+
+    from render import split_faces_cubemap
+
+    importlib.reload(split_faces_cubemap)
+    monkeypatch.setattr(split_faces_cubemap, "ensure_rgb8", lambda img: img)
+
+    class FakeImage:
+        def __init__(self, width, height):
+            self.width = width
+            self.height = height
+
+        def flip(self, _):
+            return self
+
+        def extract_area(self, _x, _y, width, height):
+            return FakeImage(width, height)
+
+        def rot90(self):
+            return self
+
+        def rot270(self):
+            return self
+
+        def resize(self, scale, **_kwargs):
+            return FakeImage(int(self.width * scale), int(self.height * scale))
+
+        def crop(self, *_args):
+            class FakeTile:
+                def write_to_buffer(self, fmt, **kwargs):
+                    return b"jpg"
+
+            return FakeTile()
+
+    tiles = split_faces_cubemap.process_cubemap_to_memory(
+        FakeImage(12288, 2048),
+        tile_size=512,
+        build="000804000000",
+    )
+
+    assert len(tiles) == 120
+
+    valid_faces = {"f", "b", "l", "r", "u", "d"}
+    lod0_count = 0
+    lod1_count = 0
+
+    for filename, _data, lod in tiles:
+        # Validate naming: BUILD_FACE_LOD_X_Y.jpg
+        assert filename.endswith(".jpg")
+        parts = filename[:-4].split("_")
+        assert len(parts) == 5, f"Bad tile name: {filename}"
+        build_str, face, lod_str, x_str, y_str = parts
+        assert build_str == "000804000000"
+        assert face in valid_faces, f"Invalid face: {face}"
+        assert lod_str in ("0", "1"), f"Invalid LOD: {lod_str}"
+        assert int(lod_str) == lod, f"LOD mismatch: filename={lod_str} tuple={lod}"
+        x, y = int(x_str), int(y_str)
+
+        # Validate tile coordinate ranges per LOD
+        if lod == 0:
+            assert 0 <= x <= 1 and 0 <= y <= 1, f"LOD0 coords out of range: {x},{y}"
+            lod0_count += 1
+        elif lod == 1:
+            assert 0 <= x <= 3 and 0 <= y <= 3, f"LOD1 coords out of range: {x},{y}"
+            lod1_count += 1
+
+    # LOD0: 6 faces × 2×2 = 24; LOD1: 6 faces × 4×4 = 96
+    assert lod0_count == 24
+    assert lod1_count == 96

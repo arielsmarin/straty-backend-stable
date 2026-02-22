@@ -129,11 +129,11 @@ def test_process_cubemap_to_memory_processes_faces_in_parallel(monkeypatch):
         build="build",
     )
 
-    # FACEsize=2048, tileSize=512 → 6 faces × 4×4 = 96 tiles, single LOD
-    assert len(tiles) == 6 * (4 * 4)
+    # Fixed LOD: LOD0 1024/512 (2×2) + LOD1 2048/512 (4×4) = 20 tiles/face × 6 = 120
+    assert len(tiles) == 120
 
-    # No resize needed: target_size == face_size → 0 resize calls
-    assert len(thread_ids) == 0
+    # LOD0 resizes from 2048→1024 for each of 6 faces
+    assert len(thread_ids) == 6
 
 
 def test_face_workers_env_is_clamped(monkeypatch):
