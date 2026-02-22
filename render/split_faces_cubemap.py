@@ -27,6 +27,11 @@ MARZIPANO_FACE_MAP = {
     "nz": "b",
 }
 
+LOD_CONFIGS = [
+    (1024, 512),  # LOD 0: face 1024, tile 512, 2×2 grid
+    (2048, 512),  # LOD 1: face 2048, tile 512, 4×4 grid
+]
+
 
 def _face_workers() -> int:
     configured = os.getenv("CUBEMAP_FACE_WORKERS")
@@ -147,10 +152,9 @@ def process_cubemap(
     if cubemap_img.width != face_size * 6:
         raise ValueError("Cubemap horizontal inválido")
 
-    # Single LOD at face_size with tile_size (always 512).
-    # FACEsize=1024 → 6 faces × 2×2 = 24 tiles
-    # FACEsize=2048 → 6 faces × 4×4 = 96 tiles
-    lod_sizes = [(face_size, tile_size)]
+    # Fixed two-level LOD: LOD0 1024/512 (2×2), LOD1 2048/512 (4×4)
+    # Total per face: 4 + 16 = 20 tiles; total per cubemap: 120 tiles
+    lod_sizes = LOD_CONFIGS
 
     if not lod_sizes:
         raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
@@ -286,7 +290,7 @@ def process_cubemap_to_memory(
     build: str = "unknown",
     max_lod: Optional[int] = None,
     min_lod: int = 0,
-    jpeg_quality: int = 72,
+    jpeg_quality: int = 70,
 ):
     split_start = time.monotonic()
     cubemap_img = normalize_to_horizontal_cubemap(input_image)
@@ -296,10 +300,9 @@ def process_cubemap_to_memory(
     if cubemap_img.width != face_size * 6:
         raise ValueError("Cubemap horizontal inválido")
 
-    # Single LOD at face_size with tile_size (always 512).
-    # FACEsize=1024 → 6 faces × 2×2 = 24 tiles
-    # FACEsize=2048 → 6 faces × 4×4 = 96 tiles
-    lod_sizes = [(face_size, tile_size)]
+    # Fixed two-level LOD: LOD0 1024/512 (2×2), LOD1 2048/512 (4×4)
+    # Total per face: 4 + 16 = 20 tiles; total per cubemap: 120 tiles
+    lod_sizes = LOD_CONFIGS
     if not lod_sizes:
         raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
     if min_lod < 0:
