@@ -129,7 +129,32 @@ def _stream_tiles_to_storage(
     workers: int,
     on_state_change=None,
 ) -> int:
-    """Render all tiles first, then upload in parallel from local disk."""
+    """Generate all tiles locally first, then upload in parallel.
+
+    Phase 1 — generation: process_cubemap writes every tile to tmp_dir without
+    triggering any upload, so the CPU is fully available for image processing.
+    Phase 2 — upload: all generated tiles are enqueued at once and uploaded in
+    parallel via TileUploadQueue, then local files are removed.
+    """
+    # Phase 1: generate all tiles to disk — no upload occurs during this phase
+    logging.info("🖼️ Fase 1 — gerando tiles para build %s", build_str)
+    process_cubemap(
+        stack_img,
+        tmp_dir,
+        tile_size=512,
+        build=build_str,
+        min_lod=min_lod,
+        max_lod=max_lod,
+        on_tile_ready=None,
+    )
+    del stack_img
+    gc.collect()
+
+    tile_files = sorted(Path(tmp_dir).glob("*.jpg"))
+    logging.info("✅ Fase 1 concluída: %d tiles gerados para build %s", len(tile_files), build_str)
+
+    # Phase 2: upload all generated tiles in parallel
+    logging.info("⬆️ Fase 2 — upload paralelo de %d tiles para build %s", len(tile_files), build_str)
     uploader = TileUploadQueue(
         tile_root=tile_root,
         upload_fn=upload_file,
@@ -139,30 +164,15 @@ def _stream_tiles_to_storage(
     uploader.start()
 
     try:
-        process_cubemap(
-            stack_img,
-            tmp_dir,
-            tile_size=512,
-            build=build_str,
-            min_lod=min_lod,
-            max_lod=max_lod,
-            on_tile_ready=None,
-        )
-
-        for tile_path in Path(tmp_dir).glob("*.jpg"):
-            filename = tile_path.name
-            match = TILE_RE.match(filename)
-            if match is None:
-                continue
+        for tile_path in tile_files:
             try:
-                lod = int(match.group("lod"))
-            except ValueError:
-                logging.warning("⚠️ Ignorando tile com nome inválido: %s", filename)
-                continue
-            uploader.enqueue(tile_path, filename, lod)
+                parts = tile_path.stem.split("_")
+                lod = int(parts[2])
+            except (IndexError, ValueError):
+                logging.warning("⚠️ Não foi possível extrair lod de %s; usando lod=0", tile_path.name)
+                lod = 0
+            uploader.enqueue(tile_path, tile_path.name, lod)
 
-        del stack_img
-        gc.collect()
         uploader.close_and_wait()
         return uploader.uploaded_count
     finally:

@@ -178,9 +178,11 @@ def test_stream_tiles_to_storage_uses_queue_and_returns_uploaded_count(monkeypat
         observed["build"] = build
         observed["min_lod"] = min_lod
         observed["max_lod"] = max_lod
-        assert on_tile_ready is None
-        (Path(out_dir) / "ab12_f_0_0_0.jpg").write_bytes(b"a")
-        (Path(out_dir) / "ab12_b_1_0_0.jpg").write_bytes(b"b")
+        assert on_tile_ready is None, "on_tile_ready must be None in the two-phase pipeline"
+        # Create tile files so the upload phase can find them
+        from pathlib import Path
+        for i in range(3):
+            (Path(out_dir) / f"{build}_f_0_{i}_0.jpg").write_bytes(b"jpg")
 
     monkeypatch.setattr(server, "TileUploadQueue", FakeQueue)
     monkeypatch.setattr(server, "process_cubemap", fake_process_cubemap)
