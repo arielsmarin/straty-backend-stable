@@ -234,17 +234,15 @@ def _render_build_background(
     min_lod: int = 0,
     job_tmp_dir: str | None = None,
 ):
+    """Background task that renders all tiles (Phase 1) then uploads them (Phase 2).
+
+    This ensures strict two-phase operation:
+    - Phase 1 (CPU bound): Generate all tiles to disk
+    - Phase 2 (IO bound): Upload all tiles in parallel
+    """
     render_key = f"{client_id}:{scene_id}:{build_str}"
     total_start = time.monotonic()
-    _set_build_status(
-        build_str,
-        "processing",
-        started_at=int(time.time()),
-        tiles_uploaded=0,
-        tiles_total=DEFAULT_TILES_TOTAL,
-        progress=0.0,
-        error=None,
-    )
+    logging.info("🚀 Background render iniciado para %s (min_lod=%d)", render_key, min_lod)
 
     try:
         if job_tmp_dir is None:
@@ -337,83 +335,6 @@ def _render_build_background(
         _active_render_pipeline_slots.release()
         with active_background_guard:
             active_background_renders.discard(render_key)
-
-
-def _render_remaining_lods(
-    client_id: str,
-    scene_id: str,
-    selection: dict,
-    build_str: str,
-    tile_root: str,
-    metadata_key: str,
-    stack_img=None,
-):
-    render_key = f"{client_id}:{scene_id}:{build_str}"
-
-    try:
-        start = time.monotonic()
-        logging.info("🧵 Background LOD render iniciado para %s", render_key)
-
-        # Reuse the stacked image if provided; otherwise re-stack
-        if stack_img is None:
-            project, _ = load_client_config(client_id)
-            ctx = resolve_scene_context(project, scene_id)
-
-        tmp_dir = tempfile.mkdtemp(prefix=f"{build_str}_bg_")
-        try:
-            stack_img = stack_layers_image_only(
-                scene_id=scene_id,
-                layers=ctx["layers"],
-                selection=selection,
-                assets_root=ctx["assets_root"],
-            )
-
-            uploaded_count = _stream_tiles_to_storage(
-                stack_img=stack_img,
-                tile_root=tile_root,
-                build_str=build_str,
-                tmp_dir=tmp_dir,
-                min_lod=1,
-                max_lod=None,
-                workers=4,
-                on_state_change=_tile_state_event_writer(tile_root, build_str),
-            )
-
-            metadata_payload = {
-                "client": client_id,
-                "scene": scene_id,
-                "build": build_str,
-                "tileRoot": tile_root,
-                "generated_at": int(time.time()),
-                "status": "ready",
-                "last_stage": "background_lods_done",
-                "background_tiles_count": uploaded_count,
-                "tile_state_counts": {
-                    "generated": 0,
-                    "uploading": 0,
-                    "uploaded": 0,
-                    "fading-in": 0,
-                    "visible": uploaded_count,
-                },
-            }
-            meta_path = _write_metadata_file(metadata_payload, tmp_dir)
-            upload_file(meta_path, metadata_key, "application/json")
-            logging.info(
-                "✅ Background LOD render finalizado para %s com %s tiles.",
-                render_key,
-                uploaded_count,
-            )
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-    except Exception:
-        logging.exception(
-            "❌ Falha na geração de LODs em background para %s", render_key)
-    finally:
-        with active_background_guard:
-            active_background_renders.discard(render_key)
-        elapsed = time.monotonic() - start
-        logging.info(
-            "⏱️ Background LOD render de %s terminou em %.2fs", render_key, elapsed)
 
 
 def load_client_config(client_id: str):
@@ -682,53 +603,9 @@ def render_cubemap(
                     lod_ready=-1,
                     error=None,
                 )
-                min_lod_for_background = 0
+                # Generate ALL tiles in the background task (no sync render)
+                # This ensures strict two-phase operation: CPU first, IO second
                 job_tmp_dir = _create_render_job_dir()
-                job_assets_root = Path(job_tmp_dir) / "panoconfig360_cache" / "clients" / client_id / "scenes" / scene_id
-                try:
-                    stack_img = stack_layers_image_only(
-                        scene_id=scene_id,
-                        layers=scene_layers,
-                        selection=selection,
-                        assets_root=job_assets_root,
-                    )
-                    lod0_uploaded = _stream_tiles_to_storage(
-                        stack_img=stack_img,
-                        tile_root=tile_root,
-                        build_str=build_str,
-                        tmp_dir=job_tmp_dir,
-                        min_lod=0,
-                        max_lod=0,
-                        workers=max(2, _TILE_WORKERS),
-                        on_state_change=_tile_state_event_writer(tile_root, build_str),
-                    )
-                    lod0_total = lod0_uploaded
-                    if lod0_total > 0:
-                        _set_build_status(
-                            build_str,
-                            "processing",
-                            tile_root=tile_root,
-                            tiles_uploaded=lod0_total,
-                            tiles_total=max(DEFAULT_TILES_TOTAL, lod0_total),
-                            progress=lod0_total / max(DEFAULT_TILES_TOTAL, lod0_total),
-                            percent_complete=lod0_total / max(DEFAULT_TILES_TOTAL, lod0_total),
-                            faces_ready=True,
-                            tiles_ready=True,
-                            lod_ready=0,
-                            error=None,
-                        )
-                        min_lod_for_background = 1
-                except Exception:
-                    logging.exception("⚠️ Falha no upload síncrono de LOD0 para %s", render_key)
-                    _set_build_status(
-                        build_str,
-                        "processing",
-                        tile_root=tile_root,
-                        faces_ready=False,
-                        tiles_ready=False,
-                        lod_ready=-1,
-                        error="lod0_sync_failed",
-                    )
                 try:
                     background_tasks.add_task(
                         _render_build_background,
@@ -738,7 +615,7 @@ def render_cubemap(
                         build_str,
                         tile_root,
                         metadata_key,
-                        min_lod_for_background,
+                        0,  # min_lod=0 to generate all LODs
                         job_tmp_dir,
                     )
                 except Exception:
