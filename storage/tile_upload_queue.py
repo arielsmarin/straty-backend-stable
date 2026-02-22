@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 _DEFAULT_UPLOAD_WORKERS = min(8, (os.cpu_count() or 4) * 2)
+_BACKPRESSURE_LOG_THRESHOLD_MS = 10  # Log warning if backpressure wait exceeds this
 
 
 class TileUploadQueue:
@@ -114,7 +115,7 @@ class TileUploadQueue:
         wait_start = time.monotonic()
         self._backpressure.acquire()
         wait_ms = (time.monotonic() - wait_start) * 1000
-        if wait_ms > 10:
+        if wait_ms > _BACKPRESSURE_LOG_THRESHOLD_MS:
             logging.info("⏳ backpressure wait: %s (%.0fms)", filename, wait_ms)
         future = self._executor.submit(self._upload_tile, file_path, filename, lod)
         with self._futures_lock:
