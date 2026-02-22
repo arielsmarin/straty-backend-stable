@@ -408,8 +408,8 @@ else:
     )
     
     def get_public_url(key: str) -> str:
-        """Local storage returns relative URLs."""
-        return f"/panoconfig360_cache/{key}"
+        """Return R2 public URL even when using local storage."""
+        return f"{R2_PUBLIC_URL}/{key}"
 
 __all__ = [
     "exists",

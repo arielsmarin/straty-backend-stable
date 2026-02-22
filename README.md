@@ -106,10 +106,7 @@ panoconfig360_totem/
 │   │   └── core/
 │   ├── css/
 │   └── index.html
-├── panoconfig360_cache/            # Cache local de tiles gerados
-│   └── clients/{client_id}/
-│       └── cubemap/{scene_id}/
-│           └── tiles/{build}/      # Tiles organizados por build
+├── /tmp/render_*/                   # Diretório temporário de processamento (efêmero)
 └── simple_crud_app/                # CRUD de configuração
     ├── backend/
     └── frontend/
@@ -167,7 +164,7 @@ Content-Type: application/json
   "status": "generated",
   "build": "abc123",
   "tiles": {
-    "baseUrl": "/panoconfig360_cache",
+    "baseUrl": "https://pub-4503b4acd02140cfb69ab3886530d45b.r2.dev",
     "tileRoot": "clients/cliente-id/cubemap/cena-id/tiles/abc123",
     "pattern": "abc123_{f}_{z}_{x}_{y}.jpg",
     "build": "abc123"
@@ -227,21 +224,20 @@ GET /api/render/events?tile_root={tileRoot}&cursor={cursor}&limit=300
 
 ## Cache e Storage
 
-### Estrutura de Cache Local
+### Estrutura de Assets no R2
 
 ```
-panoconfig360_cache/
-└── clients/
-    └── {client-id}/
-        └── cubemap/
-            └── {scene-id}/
-                └── tiles/
-                    └── {build}/
-                        ├── {build}_f_0_0_0.jpg    # Front, LOD 0
-                        ├── {build}_f_1_0_0.jpg    # Front, LOD 1
-                        ├── {build}_f_2_0_0.jpg    # Front, LOD 2
-                        ├── metadata.json          # Metadados do render
-                        └── tile_events.ndjson     # Log de eventos
+clients/
+└── {client-id}/
+    └── cubemap/
+        └── {scene-id}/
+            └── tiles/
+                └── {build}/
+                    ├── {build}_f_0_0_0.jpg    # Front, LOD 0
+                    ├── {build}_f_1_0_0.jpg    # Front, LOD 1
+                    ├── {build}_f_2_0_0.jpg    # Front, LOD 2
+                    ├── metadata.json          # Metadados do render
+                    └── tile_events.ndjson     # Log de eventos
 ```
 
 ### Build String
@@ -313,7 +309,7 @@ pytest tests/
 
 1. Verifique se o backend está rodando
 2. Verifique o console do browser para erros
-3. Verifique se os tiles foram gerados em `panoconfig360_cache/`
+3. Verifique se os tiles estão acessíveis no bucket R2
 
 ### Qualidade não melhora?
 
