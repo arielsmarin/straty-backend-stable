@@ -21,15 +21,14 @@ def test_storage_factory_defaults_to_r2(monkeypatch):
 
 def test_storage_factory_rejects_invalid_backend(monkeypatch):
     """Storage factory must raise ValueError for unknown backend names."""
+    import pytest
+
     monkeypatch.setenv("STORAGE_BACKEND", "gcs")
 
     from storage import factory
 
-    try:
+    with pytest.raises(ValueError, match="gcs"):
         importlib.reload(factory)
-        assert False, "Should have raised ValueError for invalid backend"
-    except ValueError as exc:
-        assert "gcs" in str(exc)
 
 
 def test_storage_factory_accepts_local_backend(monkeypatch):

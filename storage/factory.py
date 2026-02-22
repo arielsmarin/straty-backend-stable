@@ -43,7 +43,8 @@ elif STORAGE_BACKEND == "local":
     logging.info("📁 Using local storage backend (staging only)")
 else:
     raise ValueError(
-        f"Invalid STORAGE_BACKEND: {STORAGE_BACKEND!r}. Must be 'r2' or 'local'."
+        f"Invalid STORAGE_BACKEND: {STORAGE_BACKEND!r}. "
+        "Set the STORAGE_BACKEND environment variable to 'r2' or 'local'."
     )
 
 __all__ = [
