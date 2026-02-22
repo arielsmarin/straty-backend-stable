@@ -7,9 +7,18 @@ from pathlib import Path
 from typing import Callable, Optional
 
 _DEFAULT_UPLOAD_WORKERS = min(8, (os.cpu_count() or 4) * 2)
+_BACKPRESSURE_LOG_THRESHOLD_MS = 10  # Log warning if backpressure wait exceeds this
 
 
 class TileUploadQueue:
+    """Queue for uploading tiles to storage with strict two-phase operation.
+
+    Phase 1: Call enqueue() for each tile - tiles are added to a pending list
+             without starting any uploads. This keeps the CPU free for tile generation.
+    Phase 2: Call start_uploads() to begin parallel upload of all queued tiles.
+             Then call close_and_wait() to wait for completion.
+    """
+
     def __init__(
         self,
         tile_root: str,
@@ -36,6 +45,11 @@ class TileUploadQueue:
         self._errors: list[Exception] = []
         self._errors_lock = threading.Lock()
         self._on_state_change = on_state_change
+
+        # Pending tiles for two-phase operation (enqueue before start_uploads)
+        self._pending_tiles: list[tuple[Path, str, int]] = []
+        self._pending_lock = threading.Lock()
+        self._uploads_started = False
 
     def _set_state(self, filename: str, state: str):
         with self._states_lock:
@@ -77,28 +91,73 @@ class TileUploadQueue:
             self._backpressure.release()
 
     def enqueue(self, file_path: Path, filename: str, lod: int):
+        """Add a tile to the upload queue.
+
+        In two-phase mode (before start_uploads is called), tiles are added to
+        a pending list without starting uploads. This allows all tiles to be
+        generated first, keeping the CPU free for image processing.
+        """
         self._set_state(filename, "generated")
         self._emit_state(filename, "generated", lod)
         logging.info("🧩 tile generated: %s", filename)
+
+        with self._pending_lock:
+            if self._uploads_started:
+                # Uploads already started - submit directly to executor
+                self._submit_upload(file_path, filename, lod)
+            else:
+                # Queue tile for later upload (two-phase mode)
+                self._pending_tiles.append((file_path, filename, lod))
+                logging.info("📋 upload queued: %s", filename)
+
+    def _submit_upload(self, file_path: Path, filename: str, lod: int):
+        """Submit a single tile upload to the executor."""
         wait_start = time.monotonic()
         self._backpressure.acquire()
         wait_ms = (time.monotonic() - wait_start) * 1000
-        logging.info("📋 upload queued: %s (wait=%.0fms)", filename, wait_ms)
+        if wait_ms > _BACKPRESSURE_LOG_THRESHOLD_MS:
+            logging.info("⏳ backpressure wait: %s (%.0fms)", filename, wait_ms)
         future = self._executor.submit(self._upload_tile, file_path, filename, lod)
         with self._futures_lock:
             self._futures.append(future)
 
     def start(self):
+        """Initialize the executor (legacy compatibility - does not start uploads)."""
         self._executor = ThreadPoolExecutor(
             max_workers=self.workers,
             thread_name_prefix="tile-upload",
         )
+
+    def start_uploads(self):
+        """Begin uploading all queued tiles in parallel.
+
+        This method starts the executor if not already started, then submits
+        all pending tiles for upload. Call this after all tiles have been
+        enqueued to ensure strict phase separation.
+        """
+        with self._pending_lock:
+            if self._uploads_started:
+                return
+
+            if self._executor is None:
+                self.start()
+
+            pending = list(self._pending_tiles)
+            self._pending_tiles.clear()
+            self._uploads_started = True
+
+        logging.info("⬆️ Iniciando upload paralelo de %d tiles", len(pending))
+        for file_path, filename, lod in pending:
+            self._submit_upload(file_path, filename, lod)
 
     def close_and_wait(self):
         with self._closed_lock:
             if self._closed:
                 return
             self._closed = True
+
+        # Start uploads if not started yet (backward compatibility)
+        self.start_uploads()
 
         with self._futures_lock:
             pending = list(self._futures)
