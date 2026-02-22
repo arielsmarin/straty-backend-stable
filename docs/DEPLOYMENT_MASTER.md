@@ -211,7 +211,7 @@ const ENV = {
     ? 'http://localhost:8000'
     : 'https://api.example.com',  // Your backend URL
   cdnBaseUrl: window.location.hostname === 'localhost'
-    ? 'http://localhost:8000/panoconfig360_cache'
+    ? 'https://pub-4503b4acd02140cfb69ab3886530d45b.r2.dev'
     : 'https://cdn.example.com',  // Your R2 custom domain
 };
 ```
