@@ -147,17 +147,10 @@ def process_cubemap(
     if cubemap_img.width != face_size * 6:
         raise ValueError("Cubemap horizontal inválido")
 
-    # LODs EXATOS esperados pelo frontend
-    # Cada entrada é (lod_face_size, lod_tile_size):
-    #   lod0: face=512,  tile=256  -> { tileSize: 256, size: 512, fallbackOnly: true }
-    #   lod1: face=1024, tile=512  -> { tileSize: 512, size: 1024 }
-    lod_sizes = []
-    # lod0: face=tile_size, tile=tile_size//2
-    if tile_size <= face_size:
-        lod_sizes.append((tile_size, tile_size // 2))
-    # lod1: face dobra uma vez, tile permanece tile_size
-    if tile_size * 2 <= face_size:
-        lod_sizes.append((tile_size * 2, tile_size))
+    # Single LOD at face_size with tile_size (always 512).
+    # FACEsize=1024 → 6 faces × 2×2 = 24 tiles
+    # FACEsize=2048 → 6 faces × 4×4 = 96 tiles
+    lod_sizes = [(face_size, tile_size)]
 
     if not lod_sizes:
         raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
@@ -199,7 +192,7 @@ def process_cubemap(
         def _process_face(face_data, _scale=scale, _lod=lod, _lod_tile_size=lod_tile_size):
             face_img, marzipano_face = face_data
 
-            resized = _resize_face_for_lod(face_img, scale)
+            resized = face_img if _scale == 1.0 else _resize_face_for_lod(face_img, _scale)
 
             with tempfile.TemporaryDirectory() as tmp_dir:
 
@@ -303,11 +296,10 @@ def process_cubemap_to_memory(
     if cubemap_img.width != face_size * 6:
         raise ValueError("Cubemap horizontal inválido")
 
-    lod_sizes = []
-    if tile_size * 2 <= face_size:
-        lod_sizes.append((face_size // 2, tile_size))
-    if tile_size <= face_size:
-        lod_sizes.append((face_size, tile_size))
+    # Single LOD at face_size with tile_size (always 512).
+    # FACEsize=1024 → 6 faces × 2×2 = 24 tiles
+    # FACEsize=2048 → 6 faces × 4×4 = 96 tiles
+    lod_sizes = [(face_size, tile_size)]
     if not lod_sizes:
         raise ValueError("Nenhum LOD válido foi calculado para o cubemap")
     if min_lod < 0:

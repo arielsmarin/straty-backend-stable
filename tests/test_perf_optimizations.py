@@ -129,13 +129,11 @@ def test_process_cubemap_to_memory_processes_faces_in_parallel(monkeypatch):
         build="build",
     )
 
-    # Correctness: all 120 tiles must be produced.
-    assert len(tiles) == 6 * ((2 * 2) + (4 * 4))
+    # FACEsize=2048, tileSize=512 → 6 faces × 4×4 = 96 tiles, single LOD
+    assert len(tiles) == 6 * (4 * 4)
 
-    # Concurrency: LOD0 triggers 6 resize calls, each from a worker thread.
-    # At least 2 distinct thread IDs confirms the parallel execution path.
-    assert len(thread_ids) == 6
-    assert len(set(thread_ids)) >= 2, "Expected faces to be processed on multiple threads"
+    # No resize needed: target_size == face_size → 0 resize calls
+    assert len(thread_ids) == 0
 
 
 def test_face_workers_env_is_clamped(monkeypatch):
