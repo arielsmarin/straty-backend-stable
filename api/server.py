@@ -469,13 +469,15 @@ app = FastAPI(lifespan=lifespan)
 # CORS middleware
 # Render env var (sem espaços):
 # CORS_ORIGINS=https://stratyconfig.pages.dev,http://127.0.0.1:5500,http://localhost:5500
+_DEFAULT_CORS_ORIGINS = "https://stratyconfig.pages.dev"
 raw_origins = os.getenv("CORS_ORIGINS", "")
 origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
 if not origins:
     logger.warning(
-        "CORS_ORIGINS está vazio; nenhuma origem estará autorizada para CORS."
+        "CORS_ORIGINS está vazio; usando origem padrão: %s", _DEFAULT_CORS_ORIGINS
     )
+    origins = [o.strip() for o in _DEFAULT_CORS_ORIGINS.split(",") if o.strip()]
 
 logger.info("CORS allowed origins: %s", origins)
 
@@ -816,6 +818,14 @@ def render_status(build: str, client: str = "", scene: str = ""):
             response[key] = state[key]
     if state.get("error") is not None:
         response["error"] = state.get("error")
+
+    if tile_root:
+        response["tiles"] = {
+            "baseUrl": _tiles_base_url(),
+            "tileRoot": tile_root,
+            "build": build_str,
+        }
+
     return response
 
 

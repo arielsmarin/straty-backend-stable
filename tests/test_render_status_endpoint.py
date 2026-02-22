@@ -63,6 +63,10 @@ def test_status_returns_done_when_metadata_ready(monkeypatch):
     assert response.status_code == 200
     assert response.json()["status"] == "completed"
     assert response.json()["build"] == "ab0000000000"
+    tiles = response.json()["tiles"]
+    assert "baseUrl" in tiles
+    assert tiles["tileRoot"] == "clients/client1/cubemap/scene1/tiles/ab0000000000"
+    assert tiles["build"] == "ab0000000000"
 
 
 def test_status_returns_idle_for_invalid_build():
@@ -96,13 +100,15 @@ def test_status_returns_upload_progress(monkeypatch):
         response = client.get("/api/status/ab0000000000?client=client1&scene=scene1")
 
         assert response.status_code == 200
-        assert response.json() == {
-            "build": "ab0000000000",
-            "status": "uploading",
-            "tiles_uploaded": 12,
-            "tiles_total": 48,
-            "progress": 0.25,
-        }
+        data = response.json()
+        assert data["build"] == "ab0000000000"
+        assert data["status"] == "uploading"
+        assert data["tiles_uploaded"] == 12
+        assert data["tiles_total"] == 48
+        assert data["progress"] == 0.25
+        assert "tiles" in data
+        assert data["tiles"]["tileRoot"] == "clients/client1/cubemap/scene1/tiles/ab0000000000"
+        assert data["tiles"]["build"] == "ab0000000000"
     finally:
         with server.BUILD_LOCK:
             server.BUILD_STATUS.pop("ab0000000000", None)
