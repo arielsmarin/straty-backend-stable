@@ -47,6 +47,7 @@ class TileUploadQueue:
         _ = lod
         self._set_state(filename, "generated")
         self._emit_state(filename, "generated", lod)
+        logging.info("🧩 tile generated: %s", filename)
         self._queue.put((file_path, filename, lod))
 
     def _worker(self):
@@ -59,7 +60,9 @@ class TileUploadQueue:
             file_path, filename, _lod = item
             try:
                 key = f"{self.tile_root}/{filename}"
+                logging.info("⬆️ upload started: %s", filename)
                 self.upload_fn(str(file_path), key, "image/jpeg")
+                logging.info("✅ upload completed: %s", filename)
                 self._set_state(filename, "visible")
                 self._emit_state(filename, "visible", _lod)
                 with self._uploaded_count_lock:
@@ -74,6 +77,7 @@ class TileUploadQueue:
                     fp = Path(file_path) if not isinstance(file_path, Path) else file_path
                     if fp.exists():
                         fp.unlink()
+                        logging.info("🗑️ local file removed: %s", filename)
                 except OSError:
                     pass
                 self._queue.task_done()
