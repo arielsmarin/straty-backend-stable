@@ -55,7 +55,7 @@ def test_status_returns_processing_when_metadata_missing(monkeypatch):
 def test_status_returns_done_when_metadata_ready(monkeypatch):
     server = _load_server_module()
 
-    monkeypatch.setattr(server, "get_json", lambda key: {"status": "ready"})
+    monkeypatch.setattr(server, "get_json", lambda key: {"status": "ready", "tiles_count": 48})
 
     client = TestClient(server.app)
     response = client.get("/api/status/ab0000000000?client=client1&scene=scene1")

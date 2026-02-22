@@ -30,7 +30,7 @@ from storage.factory import (
 )
 from storage.tile_upload_queue import TileUploadQueue
 from render.scene_context import resolve_scene_context
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pathlib import Path
 from utils.build_validation import validate_build_string, validate_safe_id
 from storage import storage_r2
@@ -42,9 +42,7 @@ logger = logging.getLogger(__name__)
 
 # CONFIGURAÇÕES GLOBAIS
 ROOT_DIR = Path(__file__).resolve().parents[1].parent
-CLIENTS_ROOT = Path("panoconfig360_cache/clients")
-LOCAL_CACHE_DIR = ROOT_DIR / "panoconfig360_cache"
-os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "https://pub-4503b4acd02140cfb69ab3886530d45b.r2.dev")
 CLIENT_CONFIG_BUCKET = os.getenv("R2_CONFIG_BUCKET", "panoconfig360")
 TILE_RE = re.compile(r"^[0-9a-z]+_[fblrud]_\d+_\d+_\d+\.jpg$")
 TILE_ROOT_RE = re.compile(
@@ -457,7 +455,6 @@ def load_client_config(client_id: str):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.info("🚀 Iniciando backend STRATY")
-    os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
     # Must run at startup so libvips reads VIPS_CONCURRENCY before render operations.
     configure_pyvips_concurrency()
     yield
@@ -793,7 +790,14 @@ def render_status(build: str, client: str = "", scene: str = ""):
         try:
             metadata = get_json(metadata_key)
             if metadata.get("status") == "ready":
-                _set_build_status(build_str, "completed", tile_root=tile_root, progress=1.0)
+                tiles_count = metadata.get("tiles_count", 0)
+                _set_build_status(
+                    build_str, "completed",
+                    tile_root=tile_root,
+                    progress=1.0,
+                    tiles_uploaded=tiles_count,
+                    tiles_total=tiles_count,
+                )
         except FileNotFoundError:
             pass
         except Exception:
@@ -809,7 +813,16 @@ def render_status(build: str, client: str = "", scene: str = ""):
 
     status = state.get("status", "idle")
     status_map = {"done": "completed", "failed": "error"}
-    response = {"build": build_str, "status": status_map.get(status, status)}
+    status = status_map.get(status, status)
+
+    # Enforce: completed only when tiles_uploaded >= tiles_total and tiles_total > 0
+    if status == "completed":
+        tiles_uploaded = state.get("tiles_uploaded", 0)
+        tiles_total = state.get("tiles_total", 0)
+        if tiles_total <= 0 or tiles_uploaded < tiles_total:
+            status = "processing"
+
+    response = {"build": build_str, "status": status}
 
     for key in ("tiles_uploaded", "tiles_total", "progress", "percent_complete", "faces_ready", "tiles_ready", "lod_ready"):
         if key in state:
@@ -941,39 +954,17 @@ def health():
 
 @app.get("/panoconfig360_cache/cubemap/{client_id}/{scene_id}/tiles/{build}/{filename}")
 def get_tile(client_id: str, scene_id: str, build: str, filename: str):
+    """Legacy endpoint — redirects to R2 public URL."""
+    from fastapi.responses import RedirectResponse
 
-    # valida IDs para prevenir path traversal
     client_id = validate_safe_id(client_id, "client_id")
     scene_id = validate_safe_id(scene_id, "scene_id")
-
-    # valida build
     build = validate_build_string(build)
 
-    # valida filename estritamente
     if not TILE_RE.match(filename):
         raise HTTPException(400, "Tile inválido")
-
-    # filename deve começar com build correto
     if not filename.startswith(build + "_"):
         raise HTTPException(400, "Tile não pertence à build")
 
-    # caminho isolado por tenant e cena
-    tile_path = (
-        LOCAL_CACHE_DIR
-        / "clients"
-        / client_id
-        / "cubemap"
-        / scene_id
-        / "tiles"
-        / build
-        / filename
-    )
-
-    if not tile_path.exists():
-        raise HTTPException(404, "Tile não encontrado")
-
-    return FileResponse(
-        tile_path,
-        media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
-    )
+    r2_url = f"{R2_PUBLIC_URL}/clients/{client_id}/cubemap/{scene_id}/tiles/{build}/{filename}"
+    return RedirectResponse(url=r2_url, status_code=301)

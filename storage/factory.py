@@ -9,6 +9,7 @@ import os
 import logging
 
 STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "https://pub-4503b4acd02140cfb69ab3886530d45b.r2.dev")
 
 logging.info(f"📂 Storage backend: {STORAGE_BACKEND}")
 
@@ -39,8 +40,8 @@ if STORAGE_BACKEND == "r2":
         )
         
         def get_public_url(key: str) -> str:
-            """Local storage returns relative URLs."""
-            return f"/panoconfig360_cache/{key}"
+            """Return R2 public URL even when using local storage."""
+            return f"{R2_PUBLIC_URL}/{key}"
 else:
     from storage.storage_local import (
         exists,
@@ -53,8 +54,8 @@ else:
     )
     
     def get_public_url(key: str) -> str:
-        """Local storage returns relative URLs."""
-        return f"/panoconfig360_cache/{key}"
+        """Return R2 public URL even when using local storage."""
+        return f"{R2_PUBLIC_URL}/{key}"
 
 __all__ = [
     "exists",
