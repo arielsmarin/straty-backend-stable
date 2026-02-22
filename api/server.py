@@ -127,7 +127,7 @@ def _stream_tiles_to_storage(
     workers: int,
     on_state_change=None,
 ) -> int:
-    """Render tiles with pyvips and upload from disk queue to keep RAM bounded."""
+    """Render all tiles first, then upload in parallel from local disk."""
     uploader = TileUploadQueue(
         tile_root=tile_root,
         upload_fn=upload_file,
@@ -144,8 +144,16 @@ def _stream_tiles_to_storage(
             build=build_str,
             min_lod=min_lod,
             max_lod=max_lod,
-            on_tile_ready=uploader.enqueue,
+            on_tile_ready=None,
         )
+
+        for tile_path in sorted(Path(tmp_dir).glob("*.jpg")):
+            filename = tile_path.name
+            if not TILE_RE.match(filename):
+                continue
+            lod = int(filename.split("_")[2])
+            uploader.enqueue(tile_path, filename, lod)
+
         del stack_img
         gc.collect()
         uploader.close_and_wait()
