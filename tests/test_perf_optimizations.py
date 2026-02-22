@@ -154,6 +154,7 @@ def test_configure_pyvips_concurrency_sets_cache_limits(monkeypatch):
     class FakePyvips:
         __version__ = "mock"
         Image = object
+        _concurrency = 0
 
         @staticmethod
         def cache_set_max(value):
@@ -162,6 +163,15 @@ def test_configure_pyvips_concurrency_sets_cache_limits(monkeypatch):
         @staticmethod
         def cache_set_max_mem(value):
             calls["max_mem"] = value
+
+        @staticmethod
+        def concurrency_set(value):
+            FakePyvips._concurrency = value
+            calls["concurrency"] = value
+
+        @staticmethod
+        def concurrency_get():
+            return FakePyvips._concurrency
 
     monkeypatch.setitem(sys.modules, "pyvips", FakePyvips)
     from render import split_faces_cubemap

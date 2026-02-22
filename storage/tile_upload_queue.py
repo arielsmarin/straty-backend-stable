@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Callable, Optional
@@ -53,8 +54,10 @@ class TileUploadQueue:
         try:
             key = f"{self.tile_root}/{filename}"
             logging.info("⬆️ upload started: %s", filename)
+            upload_start = time.monotonic()
             self.upload_fn(str(file_path), key, "image/jpeg")
-            logging.info("✅ upload completed: %s", filename)
+            upload_ms = (time.monotonic() - upload_start) * 1000
+            logging.info("✅ upload completed: %s (%.0fms)", filename, upload_ms)
             self._set_state(filename, "visible")
             self._emit_state(filename, "visible", lod)
             with self._uploaded_count_lock:
@@ -77,8 +80,10 @@ class TileUploadQueue:
         self._set_state(filename, "generated")
         self._emit_state(filename, "generated", lod)
         logging.info("🧩 tile generated: %s", filename)
+        wait_start = time.monotonic()
         self._backpressure.acquire()
-        logging.info("📋 upload queued: %s", filename)
+        wait_ms = (time.monotonic() - wait_start) * 1000
+        logging.info("📋 upload queued: %s (wait=%.0fms)", filename, wait_ms)
         future = self._executor.submit(self._upload_tile, file_path, filename, lod)
         with self._futures_lock:
             self._futures.append(future)

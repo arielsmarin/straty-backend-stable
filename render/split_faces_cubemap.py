@@ -1,5 +1,6 @@
 import gc
 import logging
+import multiprocessing
 import os
 import shutil
 import tempfile
@@ -17,6 +18,11 @@ STRIP_FACES = ["px", "nx", "py", "ny", "pz", "nz"]
 logger = logging.getLogger(__name__)
 _PYVIPS_CONCURRENCY_CONFIGURED = False
 _PYVIPS_CONCURRENCY_LOCK = threading.Lock()
+
+# 4 CPUs × 100 000 µs per 100 ms period
+_MIN_RECOMMENDED_CPU_QUOTA = 4 * 100_000
+# Upper-bound for libvips thread-pool when auto-detecting
+_MAX_DEFAULT_CONCURRENCY = 4
 
 MARZIPANO_FACE_MAP = {
     "px": "r",
@@ -56,16 +62,56 @@ def _resize_face_for_lod(face_img: pyvips.Image, scale: float) -> pyvips.Image:
     return face_img.resize(scale, kernel="linear")
 
 
+def _log_cgroup_cpu_limit() -> None:
+    """Log the container CPU quota from cgroup v2 (if available)."""
+    try:
+        with open("/sys/fs/cgroup/cpu.max", "r") as f:
+            raw = f.read().strip()
+        logger.info("cgroup cpu.max: %s", raw)
+        parts = raw.split()
+        if len(parts) == 2 and parts[0] != "max":
+            quota = int(parts[0])
+            if quota < _MIN_RECOMMENDED_CPU_QUOTA:
+                logger.warning(
+                    "Container CPU quota %d < 400000 — fewer than 4 effective CPUs",
+                    quota,
+                )
+    except FileNotFoundError:
+        logger.info("cgroup cpu.max not available (not running in a container?)")
+    except Exception:
+        logger.debug("Could not read cgroup cpu.max", exc_info=True)
+
+
 def configure_pyvips_concurrency(limit: int = 0) -> None:
-    """Configure libvips via VIPS_CONCURRENCY when unset; limit=0 lets libvips use all cores."""
+    """Configure libvips concurrency explicitly; limit=0 lets libvips use all cores."""
     global _PYVIPS_CONCURRENCY_CONFIGURED
     with _PYVIPS_CONCURRENCY_LOCK:
         if _PYVIPS_CONCURRENCY_CONFIGURED:
             return
 
+        cpu_count = multiprocessing.cpu_count()
+        logger.info("CPU count: %d", cpu_count)
+        logger.info("PID: %d", os.getpid())
+        _log_cgroup_cpu_limit()
+
         logger.info("pyvips version detected: %s", getattr(pyvips, "__version__", "unknown"))
         os.environ.setdefault("VIPS_CONCURRENCY", str(limit))
-        logger.info("Configured libvips concurrency via VIPS_CONCURRENCY=%s", os.environ["VIPS_CONCURRENCY"])
+
+        # Explicitly set libvips thread concurrency so it takes effect even if
+        # the library was already initialised before the env-var was written.
+        concurrency_value = int(os.environ["VIPS_CONCURRENCY"])
+        if concurrency_value == 0:
+            concurrency_value = min(_MAX_DEFAULT_CONCURRENCY, cpu_count)
+        if hasattr(pyvips, "concurrency_set"):
+            pyvips.concurrency_set(concurrency_value)
+
+        effective = pyvips.concurrency_get() if hasattr(pyvips, "concurrency_get") else "unknown"
+        logger.info(
+            "VIPS concurrency: env=%s effective=%s",
+            os.environ["VIPS_CONCURRENCY"],
+            effective,
+        )
+
         max_ops = int(os.getenv("VIPS_CACHE_MAX_OPS", "200"))
         max_mem_mb = int(os.getenv("VIPS_CACHE_MAX_MEM_MB", "256"))
         if hasattr(pyvips, "cache_set_max"):
@@ -120,7 +166,7 @@ def _generate_tiles(face_img: pyvips.Image, out_dir: str, face: str, tile_size: 
             tile_size=tile_size,
             overlap=0,
             depth="one",
-            suffix=".jpg[Q=70,strip=true]",
+            suffix=".jpg[Q=85,strip=true,optimize_coding=true]",
             container="fs",
         )
 
@@ -207,7 +253,7 @@ def process_cubemap(
                     tile_size=_lod_tile_size,
                     overlap=0,
                     depth="one",
-                    suffix=".jpg[Q=70,strip=true]",
+                    suffix=".jpg[Q=85,strip=true,optimize_coding=true]",
                     container="fs",
                 )
 
@@ -270,15 +316,25 @@ def _process_face_to_tiles(
 
     for x in range(cols):
         for y in range(rows):
+            extract_start = time.monotonic()
             tile = resized.crop(x * lod_tile_size, y * lod_tile_size, lod_tile_size, lod_tile_size)
+            extract_ms = (time.monotonic() - extract_start) * 1000
+
+            encode_start = time.monotonic()
             tile_bytes = tile.write_to_buffer(
                 ".jpg",
                 Q=jpeg_quality,
                 strip=True,
-                optimize_coding=False,
+                optimize_coding=True,
             )
+            encode_ms = (time.monotonic() - encode_start) * 1000
+
             filename = f"{build}_{marzipano_face}_{lod}_{x}_{y}.jpg"
             face_tiles.append((filename, tile_bytes, lod))
+            logger.debug(
+                "TILE face=%s level=%d x=%d y=%d extract=%.0fms jpeg=%.0fms",
+                marzipano_face, lod, x, y, extract_ms, encode_ms,
+            )
 
     del resized
     return face_tiles, resize_elapsed
@@ -290,7 +346,7 @@ def process_cubemap_to_memory(
     build: str = "unknown",
     max_lod: Optional[int] = None,
     min_lod: int = 0,
-    jpeg_quality: int = 70,
+    jpeg_quality: int = 85,
 ):
     split_start = time.monotonic()
     cubemap_img = normalize_to_horizontal_cubemap(input_image)
